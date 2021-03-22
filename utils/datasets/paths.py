@@ -2,14 +2,8 @@ import socket
 print()
 import os
 
-MLCLOUD_SERVER_NAMES = ['dirac', 'fermi', 'pauli', 'curie']
-
 def get_base_data_dir():
-    machine_name = socket.gethostname()
-    if machine_name in MLCLOUD_SERVER_NAMES:
-        path = '/home/scratch/datasets/'
-    else:
-        path = '/home/max/ref_data/'
+    path = '/home/scratch/datasets/'
     return path
 
 def get_svhn_path():
@@ -29,7 +23,6 @@ def get_CIFAR100_C_path():
 
 def get_CINIC10_path():
     return os.path.join(get_base_data_dir(),  'cinic_10')
-
 
 def get_celebA_path():
     return get_base_data_dir()
@@ -63,30 +56,21 @@ def get_tiny_images_files(shuffled=True):
     if shuffled == True:
         raise NotImplementedError()
     else:
-        return '/home/scratch/datasets/80M Tiny Images/tiny_images.bin'
+        return os.path.join(get_base_data_dir(), '80M Tiny Images/tiny_images.bin')
 
 def get_tiny_images_lmdb():
     raise NotImplementedError()
 
 def get_imagenet_path():
-    machine_name = socket.gethostname()
-    if machine_name in MLCLOUD_SERVER_NAMES:
-        path = '/home/scratch/datasets/imagenet/'
-    else:
-        raise NotImplementedError()
+    path = os.path.join(get_base_data_dir(), 'imagenet/')
     return path
 
 def get_imagenet_o_path():
-    return get_base_data_dir() + 'imagenet-o/'
+    return os.path.join(get_base_data_dir(), 'imagenet-o/')
 
 def get_openimages_path():
-    machine_name = socket.gethostname()
-    if machine_name in MLCLOUD_SERVER_NAMES:
-        path = '/home/scratch/datasets/openimages/'
-    else:
-        raise NotImplementedError()
+    path = os.path.join(get_base_data_dir(), 'openimages/')
     return path
 
-
 def get_tiny_imagenet_path():
-    return get_base_data_dir() + 'TinyImageNet/tiny-imagenet-200/'
+    return os.path.join( get_base_data_dir(), 'TinyImageNet/tiny-imagenet-200/')
