@@ -62,6 +62,8 @@ def get_LSUN_scenes(split='train', samples_per_class=None, batch_size=None, shuf
         loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler,
                             num_workers=num_workers)
 
+    return loader
+
 
 def get_LSUN_scenes_labels():
     return  ['bedroom', 'bridge', 'church_outdoor', 'classroom',

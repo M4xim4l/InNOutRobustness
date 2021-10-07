@@ -1,6 +1,8 @@
 from torchvision import transforms
 import torch
-from utils.datasets.autoaugment import ImageNetPolicy
+from utils.datasets.autoaugment import ImageNetPolicy, CIFAR10Policy
+from utils.datasets.cifar_augmentation import CIFAR10_mean_int, CIFAR10_mean
+from utils.datasets.cutout import Cutout
 
 # lighting transform
 # https://git.io/fhBOc
@@ -103,10 +105,25 @@ def get_imageNet_augmentation(type='default', out_size=224, config_dict=None):
             transforms.RandomHorizontalFlip(),
             ImageNetPolicy(fillcolor=ImageNet_mean_int),
         ]
+    elif type == 'autoaugment_cutout':
+        padding_size = int(4 * out_size / 32)
+        transform_list = [
+            transforms.transforms.Resize((out_size, out_size)),
+            transforms.transforms.RandomCrop((out_size, out_size), padding=padding_size, fill=CIFAR10_mean_int),
+            transforms.RandomHorizontalFlip(),
+            CIFAR10Policy(fillcolor=CIFAR10_mean_int),
+        ]
     else:
         raise ValueError(f'augmentation type - {type} - not supported')
 
-    transform_list.append(transforms.ToTensor())
+    if 'cutout' in type:
+        print('Warning using CIFAR10 Cutout')
+        cutout_size = int(0.5 * out_size)
+        transform_list.append(transforms.ToTensor())
+        transform_list.append(Cutout(n_holes=1, length=cutout_size, fill_color=CIFAR10_mean))
+    else:
+        transform_list.append(transforms.ToTensor())
+
     transform = transforms.Compose(transform_list)
 
     if config_dict is not None:

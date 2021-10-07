@@ -179,6 +179,9 @@ class APGDAttack(AdversarialAttack):
     def perturb(self, x, y, targeted=False, x_init=None):
         assert self.norm in ['inf','linf','Linf', 'l2','L2']
 
+        is_train = self.model.training
+        self.model.eval()
+
         adv_best = x.detach().clone()
         loss_best = torch.ones([x.shape[0]]).to(x.device) * (-float('inf'))
         for counter in range(self.n_restarts):
@@ -189,5 +192,10 @@ class APGDAttack(AdversarialAttack):
 
             if self.verbose:
                 print('restart {} - loss: {:.5f}'.format(counter, loss_best.sum()))
+
+        if is_train:
+            self.model.train()
+        else:
+            self.model.eval()
 
         return adv_best

@@ -20,6 +20,16 @@ def get_cifar10_augmentation(type='default', cutout_window=16, out_size=32, in_s
             transforms.RandomHorizontalFlip(),
         ]
         cutout_color = CIFAR10_mean
+    elif 'jitter' in type:
+        #jitter strength
+        s = float(type[7:])
+        transform_list = [
+            transforms.RandomCrop(in_size, padding=padding_size, fill=CIFAR10_mean_int),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s),
+            transforms.RandomGrayscale(p=0.2),
+        ]
+        cutout_color = CIFAR10_mean
     elif type == 'madry' or type == 'madry_cutout':
         transform_list = [
             transforms.RandomCrop(in_size, padding=padding_size, fill=CIFAR10_mean_int),
@@ -34,6 +44,7 @@ def get_cifar10_augmentation(type='default', cutout_window=16, out_size=32, in_s
             transforms.RandomHorizontalFlip(),
             CIFAR10Policy(fillcolor=CIFAR10_mean_int, magnitude_factor=magnitude_factor),
         ]
+        cutout_color = CIFAR10_mean
     elif type == 'in_autoaugment' or type == 'in_autoaugment_cutout':
         transform_list = [
             transforms.RandomCrop(in_size, padding=padding_size, fill=CIFAR10_mean_int),

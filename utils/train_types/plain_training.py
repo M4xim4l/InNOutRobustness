@@ -46,14 +46,18 @@ class PlainTraining(TrainType):
             acc_conf(data, output, data, target)
             lr_logger.log(self.scheduler.get_last_lr()[0])
 
+            #ema
+            if self.ema:
+                self._update_avg_model()
+
             self._update_scheduler(epoch + (batch_idx + 1) / train_set_batches)
             self.output_backend.log_batch_summary(log_epoch, batch_idx, True, losses=losses, loggers=loggers)
 
         self.output_backend.end_epoch_write_summary(losses, loggers, log_epoch, True)
 
-    def _update_swa_batch_norm(self, train_loaders):
+    def _update_avg_model_batch_norm(self, train_loaders):
         train_loader = train_loaders['train_loader']
-        self.swa_model.train()
+        self.avg_model.train()
         clean_loss = self._get_clean_criterion(log_stats=False)
         clean_loss, msda = self._get_msda(clean_loss, log_stats=False)
 
@@ -61,7 +65,7 @@ class PlainTraining(TrainType):
             for batch_idx, (data, target) in enumerate(train_loader):
                 data = msda(data)
                 data, target = data.to(self.device), target.to(self.device)
-                output = self.swa_model(data)
+                output = self.avg_model(data)
 
     def _get_train_type_config(self, loader_config=None):
         base_config = self._get_base_config()

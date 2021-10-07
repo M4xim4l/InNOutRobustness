@@ -42,13 +42,14 @@ class NoiseDataset(Dataset):
 
         np.random.seed(123)
         if self.type == 'uniform':
-            data_np = np.random.rand(length, 3, self.size, self.size)
+            data_np = np.random.rand(length, 3, self.size, self.size).astype(np.float32)
             self.data = torch.from_numpy(data_np)
         elif self.type == 'normal':
-            data_np = 0.5 + np.random.randn(length, 3, self.size, self.size)
+            data_np = 0.5 + np.random.randn(length, 3, self.size, self.size).astype(np.float32)
             self.data = torch.clamp(torch.from_numpy(data_np), min=0, max=1)
         else:
             raise NotImplementedError()
+
 
         transform = transforms.Compose([
             transforms.ToPILImage(),

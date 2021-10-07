@@ -40,7 +40,7 @@ class Mixup(MixedSampleDataAugmentation):
         index = torch.randperm(x.size(0)).to(x.device)
         x_mix = lam * x + (1 - lam) * x[index, :]
 
-        self.loss.lam = lam
+        self.loss.od_weight = lam
         self.loss.index = index
 
         return x_mix

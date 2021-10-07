@@ -137,7 +137,7 @@ def get_filename(folder, architecture_folder, checkpoint, load_temp):
     else:
         load_folder_name = f'{folder}'
 
-    if checkpoint in ['final', 'best', 'best_swa', 'final_swa']:
+    if not  checkpoint.isnumeric():
         state_dict_file = f'{architecture_folder}/{load_folder_name}/{checkpoint}.pth'
     else:
         epoch = int(checkpoint)
@@ -147,21 +147,21 @@ def get_filename(folder, architecture_folder, checkpoint, load_temp):
 
 non_native_model = ['EBM', 'Madry50', 'TRADESReference', 'MadryRestrictedImageNet50', 'Carmon']
 
-def load_cifar_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False):
-    model, model_folder_post, _ = build_model32(type, num_classes)
+def load_cifar_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False, model_params=None):
+    model, model_folder_post, _ = build_model32(type, num_classes, model_params=model_params)
     state_dict_file = get_filename(folder, os.path.join(dataset_dir, model_folder_post), checkpoint, load_temp)
     state_dict = torch.load(state_dict_file, map_location=device)
     model.load_state_dict(state_dict)
     return model
 
-def load_big_transfer_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False):
+def load_big_transfer_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False, model_params=None):
     model, model_folder_post = build_model_big_transfer(type, num_classes)
     state_dict_file = get_filename(folder, os.path.join(dataset_dir, model_folder_post), checkpoint, load_temp)
     state_dict = torch.load(state_dict_file, map_location=device)
     model.load_state_dict(state_dict)
     return model
 
-def load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False):
+def load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False, model_params=None):
     if type == 'efficientnet-b0':
         model = EfficientNet.from_name('efficientnet-b0', override_params={'num_classes': num_classes})
         state_dict_file = get_filename(folder, f'{dataset_dir}//EfficientNet-B0', checkpoint, load_temp)
@@ -181,14 +181,14 @@ def load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, nu
     #     state_dict = torch.load(state_dict_file, map_location=device)
     #     model.load_state_dict(state_dict)
     else:
-        model, model_folder_post, _ = build_model224(type, num_classes)
+        model, model_folder_post, _ = build_model224(type, num_classes, **model_params)
         state_dict_file = get_filename(folder, f'{dataset_dir}/{model_folder_post}', checkpoint, load_temp)
         state_dict = torch.load(state_dict_file, map_location=device)
         model.load_state_dict(state_dict)
 
     return model
 
-def load_model(type, folder, checkpoint, temperature, device, dataset='cifar10', load_temp=False):
+def load_model(type, folder, checkpoint, temperature, device, dataset='cifar10', load_temp=False,  model_params=None):
     dataset = dataset.lower()
     if dataset == 'cifar10':
         dataset_dir = 'Cifar10Models'
@@ -253,9 +253,11 @@ def load_model(type, folder, checkpoint, temperature, device, dataset='cifar10',
         model = BigTransferWrapper(model)
     else:
         if model_family == 'Cifar32':
-            model = load_cifar_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=load_temp)
+            model = load_cifar_family_model(type, folder, checkpoint, device, dataset_dir, num_classes,
+                                            load_temp=load_temp, model_params=model_params)
         elif model_family == 'ImageNet224':
-            model = load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=load_temp)
+            model = load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, num_classes,
+                                               load_temp=load_temp, model_params=model_params)
         else:
             raise ValueError()
 

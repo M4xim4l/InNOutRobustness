@@ -11,7 +11,7 @@ from utils.adversarial_attacks import *
 from utils.distances import LPDistance
 
 class AdversarialLoss(MinMaxLoss):
-    def __init__(self, model, epoch, attack_config, num_classes, inner_objective='crossentropy', log_stats=False, number_of_batches=None, name_prefix=None):
+    def __init__(self, model, epoch, attack_config, num_classes, inner_objective='crossentropy', log_stats=False, name_prefix=None):
         super().__init__('AdversarialLoss', 'log_probabilities', log_stats=log_stats, name_prefix=name_prefix)
         self.attack = get_adversarial_attack(attack_config, model, inner_objective, num_classes=num_classes, epoch=epoch)
 
@@ -33,21 +33,25 @@ class AdversarialTraining(InDistributionTraining):
 
         distance = get_distance(id_attack_config['norm'])
 
+        if train_clean:
+            clean_weight = 0.5
+            adv_weight = 0.5
+        else:
+            clean_weight = 0.0
+            adv_weight = 1.0
+
         super().__init__('Adversarial Training', model, distance, optimizer_config, epochs, device, num_classes,
-                         train_clean=train_clean, lr_scheduler_config=lr_scheduler_config, model_config=model_config,
+                         train_clean=train_clean, clean_weight=clean_weight, id_adv_weight=adv_weight,
+                         lr_scheduler_config=lr_scheduler_config, model_config=model_config,
                          test_epochs=test_epochs, verbose=verbose, saved_model_dir=saved_model_dir,
                          saved_log_dir=saved_log_dir)
         self.id_attack_config = id_attack_config
         self.attack_loss = attack_loss
 
-    @staticmethod
-    def create_id_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False, noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd, normalize_gradient=normalize_gradient, noise=noise)
 
-
-    def _get_id_criterion(self, epoch):
-        id_train_criterion = AdversarialLoss(self.model, epoch, self.id_attack_config, self.classes, inner_objective=self.attack_loss,
-                                             log_stats=True, number_of_batches=None, name_prefix='ID')
+    def _get_id_criterion(self, epoch, model, name_prefix='ID'):
+        id_train_criterion = AdversarialLoss(model, epoch, self.id_attack_config, self.classes, inner_objective=self.attack_loss,
+                                             log_stats=True, name_prefix=name_prefix)
         return id_train_criterion
 
     def _get_train_type_config(self, loader_config=None):
@@ -70,8 +74,10 @@ class AdversarialTraining(InDistributionTraining):
 
     def _get_adversarial_training_config(self):
         config_dict = {}
-        config_dict['train_clean'] = self.train_clean
-        config_dict['adv_loss'] = self.attack_loss
+        config_dict['Train Clean'] = self.train_clean
+        config_dict['Adversarial Loss'] = self.attack_loss
+        config_dict['Clean Weight'] = self.clean_weight
+        config_dict['Adversarial Weight'] = self.id_adv_weight
         return config_dict
 
 

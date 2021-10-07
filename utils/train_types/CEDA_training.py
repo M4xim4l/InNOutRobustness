@@ -84,15 +84,14 @@ class CEDATargetedEntropyObjective(MinMaxLoss):
 class CEDATraining(OutDistributionTraining):
     def __init__(self, model, optimizer_config, epochs, device, num_classes,
                  CEDA_variant=None, lr_scheduler_config=None, msda_config=None, model_config=None,
-                 clean_criterion='ce', train_obj='log_conf', lam=1., test_epochs=1, verbose=100,
+                 clean_criterion='ce', train_obj='log_conf', od_weight=1., test_epochs=1, verbose=100,
                  saved_model_dir='SavedModels', saved_log_dir='Logs'):
 
         distance = d.LPDistance(p=2)
         super().__init__('CEDA', model, distance, optimizer_config, epochs, device, num_classes,
                          clean_criterion=clean_criterion, lr_scheduler_config=lr_scheduler_config,
-                         msda_config=msda_config, model_config=model_config, lam=lam,
-                         test_epochs=test_epochs, verbose=verbose,
-                         saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+                         msda_config=msda_config, model_config=model_config, od_weight=od_weight, test_epochs=test_epochs,
+                         verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
 
         if CEDA_variant is None:
             self.CEDA_variant = {'Type': 'CEDA'}
@@ -101,24 +100,24 @@ class CEDATraining(OutDistributionTraining):
         self.od_train_obj = train_obj
 
 
-    def _get_od_criterion(self, epoch):
+    def _get_od_criterion(self, epoch, model, name_prefix='OD'):
         if self.CEDA_variant['Type'] == 'CEDATargeted':
             label_smoothing_eps = None if 'LabelSmoothingEps' not in self.CEDA_variant.keys() else self.CEDA_variant['LabelSmoothingEps']
             train_criterion = CEDATargetedObjective(self.od_train_obj, self.classes,
                                                     label_smoothing_eps=label_smoothing_eps, log_stats=True,
-                                                    name_prefix='OD')
+                                                    name_prefix=name_prefix)
         elif self.CEDA_variant['Type'] == 'CEDA':
             train_criterion = CEDAObjective(self.od_train_obj, self.classes, log_stats=True, name_prefix='OD')
         elif self.CEDA_variant['Type'] == 'CEDATargetedEntropy':
             train_criterion = CEDATargetedEntropyObjective(self.od_train_obj, self.classes, log_stats=True,
-                                                           name_prefix='OD')
+                                                           name_prefix=name_prefix)
         else:
             raise NotImplementedError()
 
         return train_criterion
 
     def _get_CEDA_config(self):
-        CEDA_config = {'CEDA Variant': self.CEDA_variant, 'train_obj': self.od_train_obj, 'lambda': self.lam}
+        CEDA_config = {'CEDA Variant': self.CEDA_variant, 'train_obj': self.od_train_obj, 'lambda': self.od_weight}
         return CEDA_config
 
     def _get_train_type_config(self, loader_config=None):

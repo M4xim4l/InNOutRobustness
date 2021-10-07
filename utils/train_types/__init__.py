@@ -9,6 +9,7 @@ from .plain_training import PlainTraining
 from .train_type import TrainType
 from .train_loss import TrainLoss
 from .TRADES_training import TRADESTraining
-from .TRADESCEDA_training import TRADESCEDATraining
 from .TRADESACET_training import TRADESACETTraining
+from .TRADESCEDA_training import TRADESCEDATraining
 from .randomized_smoothing_training import RandomizedSmoothingTraining
+from .helpers import create_attack_config

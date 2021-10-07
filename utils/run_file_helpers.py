@@ -11,14 +11,14 @@ def parser_add_commons(parser):
     parser.add_argument('--gpu', '--list', nargs='+', default=[0],
                         help='GPU indices, if more than 1 parallel modules will be called')
     parser.add_argument('--lr', type=float, default=0.1, help='Learning rate for training')
-    parser.add_argument('--bs', type=int, default=128, help='Training batch out_size')
+    parser.add_argument('--bs', type=int, default=128, help='Training batch_size')
     parser.add_argument('--decay', type=float, default=5e-4, help='weight decay')
-    parser.add_argument('--momentum', type=float, default=0.9, help='weight decay')
-    parser.add_argument('--epochs', type=int, default=100, help='total number of epochs')
+    parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
+    parser.add_argument('--epochs', type=int, default=100, help='Total number of epochs')
     parser.add_argument('--test_epochs', type=int, default=1, help='Test frequency')
     parser.add_argument('--train_type', type=str, default='plain', help='Train type')
     parser.add_argument('--continue', dest='continue_trained', nargs=3, type=str,
-                        default=None, help='Filename of density_model to load an epoch')
+                        default=None, help='Filename Load_epoch Start_epoch of model to continue')
     parser.add_argument('--augm', type=str, default='default',
                         help=('Augmentation type'))
     parser.add_argument('--warmup_epochs', type=int,
@@ -33,6 +33,11 @@ def parser_add_commons(parser):
                         default=1.0, help='MSDA Alpha')
     parser.add_argument('--mixed_precision', type=lambda x: bool(strtobool(x)),
                         default=False, help='Mixed precision training')
+    parser.add_argument('--ema', type=lambda x: bool(strtobool(x)),
+                        default=False, help='Exponential moving average')
+    parser.add_argument('--ema_decay', type=float,
+                        default=0.999,
+                        help='EMA decay')
 
     parser.add_argument('--swa', type=str,
                         default=None, help='SWA cosine or const')
@@ -56,8 +61,9 @@ def parser_add_commons(parser):
 
 
 def parser_add_adversarial_commons(parser):
-    parser.add_argument('--acet_weight', type=float, default=1, help='Weight for out-distribution term in ACET (derivates)')
-    parser.add_argument('--trades_weight', type=float, default=6, help='Weight for TRADES term in TRADES (derivates)')
+    parser.add_argument('--od_weight', type=float, default=1., help='Weight for out-distribution term in ACET (derivates)')
+    parser.add_argument('--trades_weight', type=float, default=6., help='Weight for TRADES term in TRADES (derivates)')
+    parser.add_argument('--od_trades_weight', type=float, default=6., help='Weight for OD-TRADES term')
     parser.add_argument('--train_clean', dest='train_clean', type=lambda x: bool(strtobool(x)),
                         default=False, help='Train on additional clean data or purely adversarial')
     parser.add_argument('--norm', type=str, default='l2',
@@ -78,7 +84,7 @@ def parser_add_adversarial_commons(parser):
     parser.add_argument('--adv_obj', type=str, default='ce',
                         help=('Objective to optimize in the inner loop of adversarial training'
                               'logitsDiff | crossEntropy'))
-    parser.add_argument('--acet_obj', type=str, default='KL',
+    parser.add_argument('--ceda_obj', type=str, default='KL',
                         help=('only for ACET; what objective the adversary has'
                               'conf | log_conf | entropy | KL | bhattacharyya'))
 
@@ -88,7 +94,7 @@ def parser_add_adversarial_commons(parser):
     parser.add_argument('--rs_sigma_begin', type=float, default='1.0',
                         help=('Randomized smoothing: start sigma'))
     parser.add_argument('--rs_sigma_end', type=float, default='0.0001',
-                        help=('Randomized smoothing: start sigma'))
+                        help=('Randomized smoothing: end sigma'))
 
 
 def parser_add_adversarial_norms(parser, dataset):
@@ -180,6 +186,9 @@ def create_optim_scheduler_swa_configs(hps):
         elif epochs == 100:
             decay_epochs = [50, 75, 90]
             decay_rate = 0.1
+        elif epochs == 110:
+            decay_epochs = [100]
+            decay_rate = 0.1
         elif epochs == 120:
             decay_epochs = [50, 85, 105]
             decay_rate = 0.1
@@ -220,7 +229,8 @@ def create_optim_scheduler_swa_configs(hps):
 
     # optimizer
     optimizer_config = optimizers.create_optimizer_config('SGD', hps.lr, momentum=hps.momentum, weight_decay=hps.decay,
-                                                          nesterov=hps.nesterov, mixed_precision=hps.mixed_precision)
+                                                          nesterov=hps.nesterov, mixed_precision=hps.mixed_precision,
+                                                          ema=hps.ema, ema_decay=hps.ema_decay)
 
     if hps.swa == 'const':
         optimizers.config_creators.add_constant_swa_to_optimizer_config(hps.swa_epochs,
@@ -249,6 +259,30 @@ def create_trainer(hps, model, optimizer_config, scheduler_config, device, num_c
     id_l1_eps = hps.l1_eps
     od_l1_eps = hps.l1_eps * hps.od_eps_factor
 
+    if hps.norm in ['l2', '2']:
+        id_attack_config = tt.create_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True)
+        od_attack_config = tt.create_attack_config(od_l2_eps, hps.od_steps, hps.l2_stepsize, 'l2',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True)
+    elif hps.norm in ['l1', '1']:
+        id_attack_config = tt.create_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True)
+        od_attack_config = tt.create_attack_config(od_l1_eps, hps.od_steps, hps.l1_stepsize, 'l1',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True)
+    else:
+        id_attack_config = tt.create_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True,
+                                                   momentum=0.0)
+        od_attack_config = tt.create_attack_config(od_linf_eps, hps.od_steps, hps.linf_stepsize, 'inf',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True,
+                                                   momentum=0.0)
+
     if hps.train_type.lower() == 'plain':
         trainer = tt.PlainTraining(model, optimizer_config, hps.epochs, device, num_classes,
                                    lr_scheduler_config=scheduler_config,
@@ -256,131 +290,46 @@ def create_trainer(hps, model, optimizer_config, scheduler_config, device, num_c
                                    saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
     elif hps.train_type.lower() == 'adversarial':
         # https://arxiv.org/pdf/1906.09453.pdf
-        if hps.norm in ['l2', '2']:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1', '1']:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)  # , noise=f'uniform_{inf_eps}')
 
-        trainer = tt.AdversarialTraining(model, attack_config, optimizer_config, hps.epochs, device, num_classes,
+        trainer = tt.AdversarialTraining(model, id_attack_config, optimizer_config, hps.epochs, device, num_classes,
                                          train_clean=hps.train_clean, attack_loss=hps.adv_obj,
                                          lr_scheduler_config=scheduler_config, model_config=model_config,
                                          saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
     elif hps.train_type.lower() in ['trades']:
-        if hps.norm in ['l2', '2']:
-            attack_config = tt.TRADESTraining.create_id_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1', '1']:
-            attack_config = tt.TRADESTraining.create_id_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
-        trainer = tt.TRADESTraining(model, attack_config, optimizer_config, hps.epochs, device, num_classes,
+        trainer = tt.TRADESTraining(model, id_attack_config, optimizer_config, hps.epochs, device, num_classes,
                                     lr_scheduler_config=scheduler_config, model_config=model_config,
                                     trades_weight=hps.trades_weight,
                                     saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
     elif hps.train_type.lower() in ['advacet']:
         # https://arxiv.org/pdf/1906.09453.pdf
-        if hps.norm in ['l2', '2']:
-            id_attack_config = tt.AdversarialACET.create_id_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-            od_attack_config = tt.AdversarialACET.create_od_attack_config(od_l2_eps, hps.od_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1', '1']:
-            id_attack_config = tt.AdversarialACET.create_id_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-            od_attack_config = tt.AdversarialACET.create_od_attack_config(od_l1_eps, hps.od_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            id_attack_config = tt.AdversarialACET.create_id_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
-            od_attack_config = tt.AdversarialACET.create_od_attack_config(od_linf_eps, hps.od_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
         trainer = tt.AdversarialACET(model, id_attack_config, od_attack_config, optimizer_config, hps.epochs, device,
                                      num_classes, train_clean=hps.train_clean, attack_loss=hps.adv_obj,
                                      lr_scheduler_config=scheduler_config, model_config=model_config,
-                                     train_obj=hps.acet_obj, attack_obj=hps.acet_obj, lam=hps.acet_weight,
+                                     train_obj=hps.ceda_obj, attack_obj=hps.ceda_obj, od_weight=hps.od_weight,
                                      saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
-    elif hps.train_type.lower() in ['tradesacet', 'tradesceda']:
-        # https://arxiv.org/pdf/1906.09453.pdf
-        if hps.norm in ['l2', '2']:
-            id_attack_config = tt.TRADESACETTraining.create_id_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-            od_attack_config = tt.TRADESACETTraining.create_od_attack_config(od_l2_eps, hps.od_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1', '1']:
-            id_attack_config = tt.TRADESACETTraining.create_id_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-            od_attack_config = tt.TRADESACETTraining.create_od_attack_config(od_l1_eps, hps.od_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            id_attack_config = tt.TRADESACETTraining.create_id_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
-            od_attack_config = tt.TRADESACETTraining.create_od_attack_config(od_linf_eps, hps.od_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
-
-        if hps.train_type.lower() == 'tradesceda':
-            od_trades = True
-        else:
-            od_trades = False
+    elif hps.train_type.lower()  == 'tradesacet':
         trainer = tt.TRADESACETTraining(model, id_attack_config, od_attack_config, optimizer_config, hps.epochs, device,
-                                     num_classes, id_trades_weight=hps.trades_weight,
-                                     lr_scheduler_config=scheduler_config, model_config=model_config,
-                                     acet_obj=hps.acet_obj, lam=hps.acet_weight, od_trades=od_trades,
-                                     saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
+                                        num_classes, trades_weight=hps.trades_weight,
+                                        lr_scheduler_config=scheduler_config, model_config=model_config,
+                                        acet_obj=hps.ceda_obj, od_weight=hps.od_weight,
+                                        saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
+    elif hps.train_type.lower()  == 'tradesceda':
+        trainer = tt.TRADESCEDATraining(model, id_attack_config, od_attack_config, optimizer_config, hps.epochs, device,
+                                        num_classes, id_trades_weight=hps.trades_weight, od_trades_weight=hps.od_trades_weight,
+                                        lr_scheduler_config=scheduler_config,
+                                        ceda_obj=hps.ceda_obj, od_weight=hps.od_weight, model_config=model_config,
+                                        test_epochs=hps.test_epochs, saved_model_dir=model_dir, saved_log_dir=log_dir)
     elif hps.train_type == 'CEDA':
         trainer = tt.CEDATraining(model, optimizer_config, hps.epochs, device, num_classes, lr_scheduler_config=scheduler_config,
                                   msda_config=msda_config, model_config=model_config,
-                                  train_obj=hps.acet_obj, lam=hps.acet_weight, saved_model_dir=model_dir,
+                                  train_obj=hps.ceda_obj, od_weight=hps.od_weight, saved_model_dir=model_dir,
                                   saved_log_dir=log_dir, test_epochs=hps.test_epochs)
     elif hps.train_type.lower() == 'acet':
         # L2 disance between cifar10 and mnist is about 14 on average
-        if hps.norm in ['l2', '2']:
-            od_attack_config = tt.AdversarialACET.create_od_attack_config(od_l2_eps, hps.od_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1']:
-            od_attack_config = tt.AdversarialACET.create_od_attack_config(od_l1_eps, hps.od_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            od_attack_config = tt.ACETTraining.create_od_attack_config(od_linf_eps, hps.od_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.od_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)
         trainer = tt.ACETTraining(model, od_attack_config, optimizer_config, hps.epochs, device, num_classes,
-                                  lam=hps.acet_weight, lr_scheduler_config=scheduler_config, model_config=model_config,
-                                  train_obj=hps.acet_obj, attack_obj=hps.acet_obj,
-                                  saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
+                                  lr_scheduler_config=scheduler_config, model_config=model_config,
+                                  od_weight=hps.od_weight, train_obj=hps.ceda_obj, attack_obj=hps.ceda_obj,
+                                  test_epochs=hps.test_epochs, saved_model_dir=model_dir, saved_log_dir=log_dir)
     elif hps.train_type.lower() in ['randomizedsmoothing', 'randomized_smoothing']:
         rs_noise_scales = torch.FloatTensor(np.geomspace(hps.rs_sigma_begin, hps.rs_sigma_end, hps.rs_levels))
         trainer = tt.RandomizedSmoothingTraining(model, optimizer_config, hps.epochs, device, num_classes, rs_noise_scales,
@@ -405,6 +354,30 @@ def create_bce_trainer(hps, model, optimizer_config, scheduler_config, device, n
     id_l1_eps = hps.l1_eps
     od_l1_eps = hps.l1_eps * hps.od_eps_factor
 
+    if hps.norm in ['l2', '2']:
+        id_attack_config = tt.create_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True)
+        od_attack_config = tt.create_attack_config(od_l2_eps, hps.od_steps, hps.l2_stepsize, 'l2',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True)
+    elif hps.norm in ['l1', '1']:
+        id_attack_config = tt.create_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True)
+        od_attack_config = tt.create_attack_config(od_l1_eps, hps.od_steps, hps.l1_stepsize, 'l1',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True)
+    else:
+        id_attack_config = tt.create_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
+                                                   pgd=hps.id_pgd,
+                                                   normalize_gradient=True,
+                                                   momentum=0.0)
+        od_attack_config = tt.create_attack_config(od_linf_eps, hps.od_steps, hps.linf_stepsize, 'inf',
+                                                   pgd=hps.od_pgd,
+                                                   normalize_gradient=True,
+                                                   momentum=0.0)
+
     if hps.train_type == 'plain':
         trainer = tt.PlainTraining(model, optimizer_config, hps.epochs, device, num_classes,
                                    lr_scheduler_config=scheduler_config,
@@ -412,21 +385,7 @@ def create_bce_trainer(hps, model, optimizer_config, scheduler_config, device, n
                                    saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)
     elif hps.train_type == 'adversarial':
         # https://arxiv.org/pdf/1906.09453.pdf
-        if hps.norm in ['l2', '2']:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_l2_eps, hps.id_steps, hps.l2_stepsize, 'l2',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        elif hps.norm in ['l1', '1']:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_l1_eps, hps.id_steps, hps.l1_stepsize, 'l1',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True)
-        else:
-            attack_config = tt.AdversarialTraining.create_id_attack_config(id_linf_eps, hps.id_steps, hps.linf_stepsize, 'inf',
-                                                                           pgd=hps.id_pgd,
-                                                                           normalize_gradient=True,
-                                                                           momentum=0.0)  # , noise=f'uniform_{inf_eps}')
-
-        trainer = tt.BCEAdversarialTraining(model, attack_config, optimizer_config, hps.epochs, device, num_classes,
+        trainer = tt.BCEAdversarialTraining(model, id_attack_config, optimizer_config, hps.epochs, device, num_classes,
                                          train_clean=hps.train_clean,
                                          lr_scheduler_config=scheduler_config, model_config=model_config,
                                          saved_model_dir=model_dir, saved_log_dir=log_dir, test_epochs=hps.test_epochs)

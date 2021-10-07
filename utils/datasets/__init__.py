@@ -3,7 +3,7 @@ from .semisupervised_dataset import get_CIFAR10_ti_500k
 from .svhn import get_SVHN
 from .celebA import celebA_feature_set, celebA_ImageNetOD
 from .imagenet import get_ImageNet
-from .imagenet_subsets import get_restrictedImageNet, get_restrictedImageNetOD, get_ImageNet100
+from .imagenet_subsets import get_restrictedImageNet, get_restrictedImageNetOD, get_ImageNet100, get_ImageNetCloseToCifar
 from .fgvc_aircraft import get_fgvc_aircraft
 from .food_101N import get_food_101N
 from .food_101 import get_food_101

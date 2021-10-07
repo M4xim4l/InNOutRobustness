@@ -19,6 +19,17 @@ def get_imagenet_labels():
         labels.append(a[0])
     return labels
 
+def get_imagenet_label_wid_pairs():
+    path = get_imagenet_path()
+    dataset = datasets.ImageNet(path, split='val', transform='none')
+    classes_extended = dataset.classes
+    wids = dataset.wnids
+
+    label_wid_pairs = []
+    for a, b in zip(classes_extended, wids) :
+        label_wid_pairs.append((a[0], b))
+    return label_wid_pairs
+
 def get_ImageNet(train=True, batch_size=None, shuffle=None, augm_type='test', num_workers=8, size=224, config_dict=None):
     if batch_size == None:
         if train:

@@ -148,7 +148,7 @@ def compute_wc_auc(model, in_loader, out_loaders, device, num_classes, auc_sampl
             aucs[loader_idx, eps_idx] = eps_auc
             od_mmcs[loader_idx, eps_idx] = od_mean_conf
             fpr95[loader_idx, eps_idx] =  eps_fpr
-            print(f'WorstCase AUC {dataset_name} - {eps} - {eps_auc} - FPR95 {eps_fpr}- MMC {od_mean_conf}')
+            print(f'WorstCase AUC {dataset_name} - {eps} - {eps_auc} - FPR95 {eps_fpr} - MMC {od_mean_conf}')
 
     eps_auc_average = torch.mean(aucs, dim=0)
     eps_mmc_avergage = torch.mean(od_mmcs, dim=0)

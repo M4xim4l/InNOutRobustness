@@ -49,21 +49,22 @@ class BCECEDATraining(OutDistributionTraining):
                  lam=1., test_epochs=1, verbose=100, saved_model_dir= 'SavedModels', saved_log_dir= 'Logs'):
 
         distance = d.LPDistance(p=2)
-        super().__init__('BCECEDA', model, distance, optimizer_config, epochs, device, num_classes, clean_criterion='bce',
-                         lr_scheduler_config=lr_scheduler_config, lam=lam, test_epochs=test_epochs, verbose=verbose,
-                         saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+        super().__init__('BCECEDA', model, distance, optimizer_config, epochs, device, num_classes,
+                         clean_criterion='bce', lr_scheduler_config=lr_scheduler_config, od_weight=lam,
+                         test_epochs=test_epochs, verbose=verbose, saved_model_dir=saved_model_dir,
+                         saved_log_dir=saved_log_dir)
 
         self.mask_features = mask_features
         self.min_features_mask = min_features_mask
         self.max_features_mask = max_features_mask
 
-    def _get_od_criterion(self, epoch):
+    def _get_od_criterion(self, epoch, model):
         train_criterion = BCEACETObjective(epoch, self.mask_features, self.min_features_mask, self.max_features_mask, self.classes,
                                            log_stats=True, name_prefix='OD')
         return None, train_criterion
 
     def _get_CEDA_config(self):
-        CEDA_config = {'lambda': self.lam}
+        CEDA_config = {'lambda': self.od_weight}
         return CEDA_config
 
     def _get_train_type_config(self, loader_config=None):

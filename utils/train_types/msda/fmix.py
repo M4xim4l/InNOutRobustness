@@ -69,7 +69,7 @@ class FMix(MixedSampleDataAugmentation):
         # Mix the images
         x_mix = mask * x + (1 - mask) * x[index]
 
-        self.loss.lam = lam
+        self.loss.od_weight = lam
         self.loss.index = index
 
         return x_mix

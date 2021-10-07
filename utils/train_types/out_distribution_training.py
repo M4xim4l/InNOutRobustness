@@ -19,27 +19,22 @@ from .helpers import interleave_forward
 
 ###################################OUT DISTRIBUTION TRAINING#########################################
 class OutDistributionTraining(TrainType):
-    def __init__(self, name, model, od_distance, optimizer_config, epochs, device, num_classes,
-                 clean_criterion='ce', lr_scheduler_config=None, msda_config=None, model_config=None,
-                 lam=1., test_epochs=5, verbose=100, saved_model_dir='SavedModels', saved_log_dir='Logs'):
+    def __init__(self, name, model, od_distance, optimizer_config, epochs, device, num_classes, clean_criterion='ce',
+                 lr_scheduler_config=None, msda_config=None, model_config=None, od_weight=1., test_epochs=5,
+                 verbose=100, saved_model_dir='SavedModels', saved_log_dir='Logs'):
 
         super().__init__(name, model, optimizer_config, epochs, device, num_classes,
                          clean_criterion=clean_criterion, lr_scheduler_config=lr_scheduler_config,
                          msda_config=msda_config, model_config=model_config, test_epochs=test_epochs,
                          verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
-        self.lam = lam
+        self.od_weight = od_weight
         self.od_distance = od_distance
         self.od_iterator = None
 
     def requires_out_distribution(self):
         return True
 
-
-    @staticmethod
-    def create_od_attack_config(*args, **kwargs):
-        raise NotImplementedError()
-
-    def _get_od_criterion(self, epoch):
+    def _get_od_criterion(self, epoch, model,  name_prefix='OD'):
         #Should return a MinMaxLoss
         raise NotImplementedError()
 
@@ -56,7 +51,7 @@ class OutDistributionTraining(TrainType):
         new_best = super().test(test_loaders, epoch, test_avg_model)
 
         if test_avg_model:
-            model = self.swa_model
+            model = self.avg_model
         else:
             model = self.model
 
@@ -65,12 +60,16 @@ class OutDistributionTraining(TrainType):
         if 'out_distribution_test_loader' in test_loaders:
             out_distribution_test_loader = test_loaders['out_distribution_test_loader']
             # other accuracy
+            if test_avg_model:
+                prefix = 'AVG_OD'
+            else:
+                prefix = 'OD'
 
-            od_train_criterion = self._get_od_criterion(epoch)
+            od_train_criterion = self._get_od_criterion(epoch, model)
             losses = [od_train_criterion]
 
-            distance_od = DistanceLogger(self.od_distance, name_prefix='OD')
-            confidence_od = self._get_od_conf_logger(name_prefix='OD')
+            distance_od = DistanceLogger(self.od_distance, name_prefix=prefix)
+            confidence_od = self._get_od_conf_logger(name_prefix=prefix)
             loggers = [distance_od, confidence_od]
 
 
@@ -136,7 +135,7 @@ class OutDistributionTraining(TrainType):
         clean_loss = self._get_clean_criterion(test=False, log_stats=True, name_prefix='Clean')
         clean_loss, msda = self._get_msda(clean_loss, log_stats=True, name_prefix='Clean')
 
-        od_train_criterion = self._get_od_criterion(epoch)
+        od_train_criterion = self._get_od_criterion(epoch, self.model)
         od_train_criterion, od_msda = self._get_msda(od_train_criterion, log_stats=True)
 
         losses = [clean_loss, od_train_criterion]
@@ -154,6 +153,7 @@ class OutDistributionTraining(TrainType):
                 od_data, od_target = next(self.od_iterator)
             except:
                 self.od_iterator = iter(out_distribution_loader)
+                len(out_distribution_loader.dataset)
                 od_data, od_target = next(self.od_iterator)
 
             if data.shape[0] < bs or od_data.shape[0] < od_bs:
@@ -173,7 +173,7 @@ class OutDistributionTraining(TrainType):
                 loss1 = clean_loss(data, clean_out, data, target)
                 loss2 = od_train_criterion(od_adv_noise, od_out, od_data, od_target)
 
-                loss = 0.5 * loss1 + 0.5 * self.lam * loss2
+                loss = 0.5 * loss1 + 0.5 * self.od_weight * loss2
 
             self.optimizer.zero_grad()
             self.scaler.scale(loss).backward()
@@ -188,25 +188,29 @@ class OutDistributionTraining(TrainType):
             confidence_od(od_adv_noise, od_out, od_data, od_target)
             distance_od(od_adv_noise, od_out, od_data, od_target)
 
+            #ema
+            if self.ema:
+                self._update_avg_model()
+
             self._update_scheduler(epoch + (batch_idx + 1) / train_set_batches)
             self.output_backend.log_batch_summary(log_epoch, batch_idx, True, losses=losses, loggers=loggers)
 
         self._update_scheduler(epoch + 1)
         self.output_backend.end_epoch_write_summary(losses, loggers, log_epoch, True)
 
-    def _update_swa_batch_norm(self, train_loaders):
+    def _update_avg_model_batch_norm(self, train_loaders):
         train_loader = train_loaders['train_loader']
         out_distribution_loader = train_loaders['out_distribution_loader']
 
         clean_loss = self._get_clean_criterion(test=False, log_stats=True, name_prefix='Clean')
         clean_loss, msda = self._get_msda(clean_loss, log_stats=True, name_prefix='Clean')
 
-        od_train_criterion = self._get_od_criterion(self.epochs)
+        od_train_criterion = self._get_od_criterion(self.epochs, self.avg_model)
         od_train_criterion, od_msda = self._get_msda(od_train_criterion, log_stats=True)
         bs = self._get_loader_batchsize(train_loader)
         od_bs = self._get_loader_batchsize(out_distribution_loader)
 
-        self.swa_model.train()
+        self.avg_model.train()
 
         with torch.no_grad():
             for batch_idx, (data, target) in enumerate(train_loader):
@@ -226,4 +230,4 @@ class OutDistributionTraining(TrainType):
                 od_data, od_target = od_data.to(self.device), od_target.to(self.device)
 
                 od_adv_noise = od_train_criterion.inner_max(od_data, od_target)
-                interleave_forward(self.swa_model, [data, od_adv_noise], in_parallel=self.in_parallel)
+                interleave_forward(self.avg_model, [data, od_adv_noise], in_parallel=self.in_parallel)

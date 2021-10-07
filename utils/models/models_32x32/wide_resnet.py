@@ -63,8 +63,9 @@ class NetworkBlock(nn.Module):
         return self.layer(x)
 
 class WideResNet(nn.Module):
-    def __init__(self, depth, num_classes, widen_factor=1, activation='relu', dropRate=0.0):
+    def __init__(self, depth, num_classes, widen_factor=1, activation='relu', dropRate=0.0, return_feature_map=False):
         super(WideResNet, self).__init__()
+        self.return_feature_map = return_feature_map
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert((depth - 4) % 6 == 0)
         n = (depth - 4) / 6
@@ -101,22 +102,29 @@ class WideResNet(nn.Module):
         out = self.activation(self.bn1(out))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
-        return self.fc(out)
 
-def WideResNet28x10(num_classes=10, activation='relu', dropRate=0.0):
-     return WideResNet(28, num_classes, 10, activation=activation, dropRate=dropRate)
+        if self.return_feature_map:
+            return out
+        else:
+            return self.fc(out)
 
-def WideResNet28x2(num_classes=10, activation='relu', dropRate=0.0):
-     return WideResNet(28, num_classes, 2, activation=activation, dropRate=dropRate)
+def WideResNet28x10(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+     return WideResNet(28, num_classes, 10, activation=activation, dropRate=dropRate, return_feature_map=return_feature_map)
 
-def WideResNet28x20(num_classes=10, activation='relu', dropRate=0.0):
-    return WideResNet(28, num_classes, 20, activation=activation,dropRate=dropRate)
+def WideResNet28x2(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+     return WideResNet(28, num_classes, 2, activation=activation, dropRate=dropRate, return_feature_map=return_feature_map)
 
-def WideResNet34x20(num_classes=10, activation='relu', dropRate=0.0):
-    return WideResNet(34, num_classes, 20, activation=activation,dropRate=dropRate)
+def WideResNet28x20(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+    return WideResNet(28, num_classes, 20, activation=activation,dropRate=dropRate, return_feature_map=return_feature_map)
 
-def WideResNet40x10(num_classes=10, activation='relu', dropRate=0.0):
-    return WideResNet(40, num_classes, 10, activation=activation, dropRate=dropRate)
+def WideResNet34x10(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+    return WideResNet(34, num_classes, 10, activation=activation,dropRate=dropRate, return_feature_map=return_feature_map)
 
-def WideResNet70x16(num_classes=10, activation='relu', dropRate=0.0):
-    return WideResNet(70, num_classes, 16, activation=activation, dropRate=dropRate)
+def WideResNet34x20(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+    return WideResNet(34, num_classes, 20, activation=activation,dropRate=dropRate, return_feature_map=return_feature_map)
+
+def WideResNet40x10(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+    return WideResNet(40, num_classes, 10, activation=activation, dropRate=dropRate, return_feature_map=return_feature_map)
+
+def WideResNet70x16(num_classes=10, activation='relu', dropRate=0.0, return_feature_map=False):
+    return WideResNet(70, num_classes, 16, activation=activation, dropRate=dropRate, return_feature_map=return_feature_map)

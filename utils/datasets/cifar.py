@@ -11,6 +11,7 @@ import numpy as np
 from .paths import get_CIFAR10_path, get_CIFAR100_path, get_base_data_dir
 from PIL import Image
 import pickle
+import os
 
 DEFAULT_TRAIN_BATCHSIZE = 128
 DEFAULT_TEST_BATCHSIZE = 128
@@ -180,7 +181,7 @@ CIFAR100inCIFAR10Labels = ['pickup_truck', 'bus']
 #CIFAR100inCIFAR10Labels = ['pickup_truck']
 
 class CIFAR100MinusCIFAR10(Dataset):
-    def __init__(self, path, train=True, transform=None):
+    def __init__(self, path, train=True, samples_per_class=None, transform=None):
         super().__init__()
         self.cifar100 = datasets.CIFAR100(path, train=train, transform=transform)
 
@@ -201,14 +202,38 @@ class CIFAR100MinusCIFAR10(Dataset):
             targets.append( cls_idx * torch.ones(len(class_idcs), dtype=torch.long))
 
         self.cifar100_idcs = torch.cat(cifar100_idcs)
+
+        if samples_per_class is None:
+            self.subset_idcs = torch.arange(len(self.cifar100_idcs), dtype=torch.long)
+            print(f'Using all {len(self.subset_idcs)} samples')
+        else:
+            split = 'train' if train else 'test'
+            idcs_filename = f'cifar100_minus_cifar10_{split}_{samples_per_class}.pt'
+            if os.path.exists(idcs_filename):
+                self.subset_idcs = torch.load(idcs_filename)
+                print(f'Loading an existing subset of {len(self.subset_idcs)} samples')
+            else:
+                num_samples = samples_per_class * len(cifar100_idcs)
+                self.subset_idcs = torch.zeros(num_samples, dtype=torch.long)
+                print(f'Creating a subset of {len(self.subset_idcs)} samples')
+                offset = 0
+                for cls_idx, cls in enumerate(self.classes):
+                    num_cls_samples = len(cifar100_idcs[cls_idx])
+                    selected_cls_idcs = torch.randperm(num_cls_samples)[:samples_per_class]
+                    self.subset_idcs[cls_idx*samples_per_class:(cls_idx+1)*samples_per_class] = offset + selected_cls_idcs
+                    offset += num_cls_samples
+
+                torch.save(self.subset_idcs, idcs_filename)
+
         self.targets = torch.cat(targets)
-        self.length = len(self.targets)
+        self.length = len(self.subset_idcs)
 
     def __getitem__(self, index):
-        cifar100_idx = self.cifar100_idcs[index]
+        sub_idx = self.subset_idcs[index]
+        cifar100_idx = self.cifar100_idcs[sub_idx]
 
         img,_ = self.cifar100[cifar100_idx]
-        target = self.targets[index]
+        target = self.targets[sub_idx]
 
         return img, target
 
@@ -217,7 +242,7 @@ class CIFAR100MinusCIFAR10(Dataset):
 
 
 
-def get_CIFAR100MinusCIFAR10(train=True, batch_size=None, shuffle=None, augm_type='none',
+def get_CIFAR100MinusCIFAR10(train=True, batch_size=None, shuffle=None, samples_per_class=None, augm_type='none',
                              cutout_window=16, num_workers=2, size=32, config_dict=None):
     if batch_size == None:
         if train:
@@ -235,7 +260,7 @@ def get_CIFAR100MinusCIFAR10(train=True, batch_size=None, shuffle=None, augm_typ
         shuffle = train
 
     path = get_CIFAR100_path()
-    dataset = CIFAR100MinusCIFAR10(path, train=train, transform=transform)
+    dataset = CIFAR100MinusCIFAR10(path, train=train, samples_per_class=samples_per_class, transform=transform)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                          shuffle=shuffle, num_workers=num_workers)
 

@@ -40,8 +40,8 @@ class RandomizedSmoothingTraining(InDistributionTraining):
                          saved_log_dir=saved_log_dir)
 
 
-    def _get_id_criterion(self, epoch):
-        id_train_criterion = RandomizedSmoothingLoss(self.noise_scales, log_stats=True, name_prefix='ID')
+    def _get_id_criterion(self, epoch, model, name_prefix='ID'):
+        id_train_criterion = RandomizedSmoothingLoss(self.noise_scales, log_stats=True, name_prefix=name_prefix)
         return id_train_criterion
 
     def _get_train_type_config(self, loader_config=None):

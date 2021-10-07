@@ -1,6 +1,8 @@
-def create_optimizer_config(optimizer_type, lr, weight_decay=0, momentum=0, nesterov=False, mixed_precision=False):
+def create_optimizer_config(optimizer_type, lr,
+                            weight_decay=0, momentum=0, nesterov=False,
+                            mixed_precision=False, ema=False, ema_decay=0.990):
     optimizer_config = {'optimizer_type': optimizer_type, 'lr': lr, 'weight_decay': weight_decay,
-                        'mixed_precision': mixed_precision}
+                        'mixed_precision': mixed_precision, 'ema': ema, 'ema_decay': ema_decay}
     if optimizer_type == 'SGD':
         optimizer_config['momentum'] = momentum
         optimizer_config['nesterov'] = nesterov

@@ -48,14 +48,16 @@ class OutputBackend:
     def write_losses(self, losses, epoch, train):
         losses_logs_combined = []
         for loss in losses:
-            losses_logs_combined.extend(loss.get_logs())
+            if loss is not None:
+                losses_logs_combined.extend(loss.get_logs())
 
         self._write_logs_inner(losses_logs_combined, epoch, train, 'Losses')
 
     def write_loggers(self, loggers, epoch, train):
         logges_logs_combined = []
         for loss in loggers:
-            logges_logs_combined.extend(loss.get_logs())
+            if loss is not None:
+                logges_logs_combined.extend(loss.get_logs())
 
         self._write_logs_inner(logges_logs_combined, epoch, train, 'Statistics')
 
@@ -93,14 +95,15 @@ class OutputBackend:
                 losses_loggers.extend(loggers)
 
             for loss in losses_loggers:
-                loss_logs = loss.get_logs()
-                for log in loss_logs:
-                    if log.type is LogType.SCALAR:
-                        post_string_add = f'{log.name:} {log.value:.4f} '
-                        post_string += post_string_add
-                    else:
-                        #ignore non scalar logs
-                        pass
+                if loss is not None:
+                    loss_logs = loss.get_logs()
+                    for log in loss_logs:
+                        if log.type is LogType.SCALAR:
+                            post_string_add = f'{log.name:} {log.value:.4f} '
+                            post_string += post_string_add
+                        else:
+                            #ignore non scalar logs
+                            pass
 
             self.pbar.set_postfix_str(post_string)
             self.pbar.set_description_str(pre_string)
@@ -113,10 +116,11 @@ class OutputBackend:
         while not created:
             try:
                 date_stamp = datetime.now().strftime('%d-%m-%Y_%H:%M:%S')
-                self.temp_dir = '{}/_temp_{}_{}/'.format(base_model_dir, type_description, date_stamp)
-                self.main_dir = '{}/{}_{}/'.format(base_model_dir, type_description, date_stamp)
-                self.writer_dir = '{}/{}_{}'.format(log_dir, type_description, date_stamp)
-                self.checkpoints_dir = '{}checkpoints/'.format(self.temp_dir)
+                self.model_name = f'{type_description}_{date_stamp}'
+                self.temp_dir = os.path.join(base_model_dir, f'_temp_{self.model_name}')
+                self.main_dir = os.path.join(base_model_dir, self.model_name)
+                self.writer_dir = os.path.join(log_dir, self.model_name)
+                self.checkpoints_dir = os.path.join(self.temp_dir, 'checkpoints')
                 pathlib.Path(self.temp_dir).mkdir(parents=True, exist_ok=False)
                 pathlib.Path(self.checkpoints_dir).mkdir(parents=True, exist_ok=False)
                 pathlib.Path(self.writer_dir).mkdir(parents=True, exist_ok=False)
@@ -127,12 +131,17 @@ class OutputBackend:
 
         print(f'Model final dir: {self.main_dir} - temp dir {self.temp_dir}')
 
-    def save_model_checkpoint(self, model_state_dict, epoch, optimizer_state_dict=None):
+    def save_model_checkpoint(self, model_state_dict, epoch, optimizer_state_dict=None, avg=False):
+        if avg:
+            avg_postfix = '_avg'
+        else:
+            avg_postfix = ''
+
         if epoch in ['best', 'final', 'best_swa', 'final_swa']:
-            checkpoint_file = os.path.join(self.temp_dir, f'{epoch}.pth')
+            checkpoint_file = os.path.join(self.temp_dir, f'{epoch}{avg_postfix}.pth')
             optimizer_file = os.path.join(self.temp_dir, f'{epoch}_optim.pth')
         else:
-            checkpoint_file = os.path.join(self.checkpoints_dir, f'{epoch}.pth')
+            checkpoint_file = os.path.join(self.checkpoints_dir, f'{epoch}{avg_postfix}.pth')
             optimizer_file = os.path.join(self.checkpoints_dir, f'{epoch}_optim.pth')
 
         torch.save(model_state_dict, checkpoint_file)
@@ -183,7 +192,7 @@ class OutputBackend:
 
 
     def save_model_configs(self, configs):
-        out_file = f'{self.temp_dir}/config.txt'
+        out_file = os.path.join(self.temp_dir, 'config.txt')
         with open(out_file, 'w') as fileID:
             OutputBackend._save_dict_to_txt(configs, fileID)
 

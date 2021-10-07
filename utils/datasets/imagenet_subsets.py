@@ -481,3 +481,48 @@ def get_ImageNet100OD(train=True, batch_size=None, shuffle=None, augm_type='none
         config_dict['Augmentation'] = augm_config
 
     return loader
+
+#######################
+IMAGENETCLOSETODICFAR_WIDS = ['n03773504', 'n04266014', 'n04008634',
+                              'n03445924', 'n03791053', 'n03649909',
+                              'n04562935', 'n03888257',
+                              'n02127052', 'n02129165', 'n02128925',
+                              'n02422699', 'n02423022', 'n02114855',
+                              'n02117135', 'n02114367', 'n02114712',
+                              'n01729977', 'n01756291', 'n01629819',
+                              'n02391049', 'n02504458', 'n02437312',
+                              'n03240683', 'n02894605',
+                              'n04465501', 'n03384352', 'n03272562']
+
+def get_ImageNetCloseToCifar(train=True, batch_size=None, shuffle=None, augm_type='none',
+                    num_workers=8, size=224, config_dict=None):
+    if batch_size == None:
+        if train:
+            batch_size = DEFAULT_TRAIN_BATCHSIZE
+        else:
+            batch_size = DEFAULT_TEST_BATCHSIZE
+
+    augm_config = {}
+    transform = get_imageNet_augmentation(type=augm_type, out_size=size, config_dict=augm_config)
+    if not train and augm_type != 'test' and augm_type != 'none':
+        print('Warning: ImageNet test set with ref_data augmentation')
+
+    if shuffle is None:
+        shuffle = train
+
+    path = get_imagenet_path()
+
+    if train == True:
+        dataset = ImageNetWIDSubset(path, split='train', wids=IMAGENETCLOSETODICFAR_WIDS, transform=transform)
+    else:
+        dataset = ImageNetWIDSubset(path, split='val', wids=IMAGENETCLOSETODICFAR_WIDS, transform=transform)
+
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                         shuffle=shuffle, num_workers=num_workers)
+
+    if config_dict is not None:
+        config_dict['Dataset'] = 'ImageNetCloseToCifar'
+        config_dict['Batch out_size'] = batch_size
+        config_dict['Augmentation'] = augm_config
+
+    return loader

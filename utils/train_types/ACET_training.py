@@ -68,16 +68,16 @@ class ACETTargetedObjective(MinMaxLoss):
 
 class ACETTraining(OutDistributionTraining):
     def __init__(self, model, od_attack_config, optimizer_config, epochs, device, num_classes,
-                 lr_scheduler_config=None, model_config=None, target_confidences=False, lam=1.,
+                 lr_scheduler_config=None, model_config=None, target_confidences=False, od_weight=1.,
                  train_obj='KL', attack_obj='KL',test_epochs=5, verbose=100,
                  saved_model_dir='SavedModels', saved_log_dir='Logs'):
 
         distance = get_distance(od_attack_config['norm'])
 
         super().__init__('ACET', model, distance, optimizer_config, epochs, device, num_classes,
-                         lr_scheduler_config=lr_scheduler_config, model_config=model_config,
-                         lam=lam, test_epochs=test_epochs, verbose=verbose,
-                         saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+                         lr_scheduler_config=lr_scheduler_config, model_config=model_config, od_weight=od_weight,
+                         test_epochs=test_epochs, verbose=verbose, saved_model_dir=saved_model_dir,
+                         saved_log_dir=saved_log_dir)
 
         self.od_attack_config = od_attack_config
 
@@ -85,21 +85,17 @@ class ACETTraining(OutDistributionTraining):
         self.od_attack_obj = attack_obj
         self.od_train_obj = train_obj
 
-    @staticmethod
-    def create_od_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False, noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd, normalize_gradient=normalize_gradient, noise=noise)
-
-    def _get_od_criterion(self, epoch):
+    def _get_od_criterion(self, epoch, model,  name_prefix='OD'):
         if self.target_confidences:
-            train_criterion = ACETTargetedObjective(self.model, epoch, self.od_attack_config, self.od_train_obj, self.od_attack_obj, self.classes,
-                                        log_stats=True, name_prefix='OD')
+            train_criterion = ACETTargetedObjective(model, epoch, self.od_attack_config, self.od_train_obj, self.od_attack_obj, self.classes,
+                                        log_stats=True, name_prefix=name_prefix)
         else:
-            train_criterion = ACETObjective(self.model, epoch, self.od_attack_config, self.od_train_obj, self.od_attack_obj, self.classes,
-                                        log_stats=True, name_prefix='OD')
+            train_criterion = ACETObjective(model, epoch, self.od_attack_config, self.od_train_obj, self.od_attack_obj, self.classes,
+                                        log_stats=True, name_prefix=name_prefix)
         return train_criterion
 
     def _get_ACET_config(self):
-        ACET_config = {'targeted confidences': self.target_confidences, 'train_obj': self.od_train_obj, 'attack_obj': self.od_attack_obj, 'lambda': self.lam}
+        ACET_config = {'targeted confidences': self.target_confidences, 'train_obj': self.od_train_obj, 'attack_obj': self.od_attack_obj, 'lambda': self.od_weight}
         return ACET_config
 
     def _get_train_type_config(self, loader_config=None):

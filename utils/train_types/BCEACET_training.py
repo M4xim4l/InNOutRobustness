@@ -64,9 +64,9 @@ class BCEACETTraining(OutDistributionTraining):
         distance = get_distance(od_attack_config['norm'])
 
         super().__init__('BCEACET', model, distance, optimizer_config, epochs, device, num_classes,
-                         clean_criterion='bce', lr_scheduler_config=lr_scheduler_config, lam=lam,
-                         test_epochs=test_epochs, verbose=verbose,
-                         saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+                         clean_criterion='bce', lr_scheduler_config=lr_scheduler_config, od_weight=lam,
+                         test_epochs=test_epochs, verbose=verbose, saved_model_dir=saved_model_dir,
+                         saved_log_dir=saved_log_dir)
 
         self.od_attack_config = od_attack_config
         self.mask_featrues = mask_features
@@ -74,12 +74,8 @@ class BCEACETTraining(OutDistributionTraining):
         self.max_features_mask = max_features_mask
 
 
-    @staticmethod
-    def create_od_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False, noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd, normalize_gradient=normalize_gradient, noise=noise)
-
-    def _get_od_criterion(self, epoch):
-        train_criterion = BCEACETObjective(self.model, epoch, self.od_attack_config, self.mask_featrues,
+    def _get_od_criterion(self, epoch, model):
+        train_criterion = BCEACETObjective(model, epoch, self.od_attack_config, self.mask_featrues,
                                            self.min_features_mask, self.max_features_mask, self.classes,
                                            log_stats=True, name_prefix='OD')
         return train_criterion
@@ -88,7 +84,7 @@ class BCEACETTraining(OutDistributionTraining):
         return get_adversarial_attack(self.od_attack_config, self.model, att_criterion, num_classes=self.classes, epoch=epoch)
 
     def _get_ACET_config(self):
-        ACET_config = {'lambda': self.lam}
+        ACET_config = {'lambda': self.od_weight}
         return ACET_config
 
     def _get_train_type_config(self, loader_config=None):

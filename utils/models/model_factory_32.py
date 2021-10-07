@@ -1,6 +1,6 @@
 from utils.models.models_32x32.resnet import ResNet50, ResNet18, ResNet34
 from utils.models.models_32x32.fixup_resnet import fixup_resnet20, fixup_resnet56
-from utils.models.models_32x32.wide_resnet import WideResNet28x2, WideResNet28x10, WideResNet28x20, WideResNet34x20, WideResNet40x10, WideResNet70x16
+from utils.models.models_32x32.wide_resnet import WideResNet28x2, WideResNet28x10, WideResNet28x20, WideResNet34x20, WideResNet40x10, WideResNet70x16, WideResNet34x10
 #from utils.models.models_32x32.shake_pyramidnet import ShakePyramidNet
 from utils.models.models_32x32.pyramid import aa_PyramidNet
 
@@ -28,7 +28,6 @@ def parse_params(params_list):
 
 def build_model(model_name, num_classes, model_params=None):
     model_name = model_name.lower()
-
     model_config = parse_params(model_params)
 
     if model_name == 'resnet18':
@@ -56,19 +55,22 @@ def build_model(model_name, num_classes, model_params=None):
         model = WideResNet28x2(num_classes=num_classes, **model_config)
         model_name = 'WideResNet28x2'
     elif model_name == 'wideresnet28x10':
-        model = WideResNet28x10(num_classes=num_classes, **model_config)
+        model = WideResNet28x10(num_classes=num_classes)
         model_name = 'WideResNet28x10'
     elif model_name == 'wideresnet28x20':
-        model = WideResNet28x20(num_classes=num_classes, **model_config)
+        model = WideResNet28x20(num_classes=num_classes)
         model_name = 'WideResNet28x20'
+    elif model_name == 'wideresnet34x10':
+        model = WideResNet34x10(num_classes=num_classes, **model_config)
+        model_name = 'WideResNet34x10'
     elif model_name == 'wideresnet34x20':
-        model = WideResNet34x20(num_classes=num_classes, **model_config)
+        model = WideResNet34x20(num_classes=num_classes)
         model_name = 'WideResNet34x20'
     elif model_name == 'wideresnet40x10':
-        model = WideResNet40x10(num_classes=num_classes, **model_config)
+        model = WideResNet40x10(num_classes=num_classes)
         model_name = 'WideResNet40x10'
     elif model_name == 'wideresnet70x16':
-        model = WideResNet70x16(num_classes=num_classes, **model_config)
+        model = WideResNet70x16(num_classes=num_classes)
         model_name = 'WideResNet70x16'
     else:
         print(f'Net {model_name} not supported')

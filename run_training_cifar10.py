@@ -28,6 +28,7 @@ rh.parser_add_adversarial_norms(parser, 'cifar10')
 
 hps = parser.parse_args()
 #
+device_ids = None
 if len(hps.gpu)==0:
     device = torch.device('cpu')
     print('Warning! Computing on CPU')
@@ -49,8 +50,6 @@ log_dir = os.path.join(logs_root_dir, model_name)
 
 start_epoch, optim_state_dict = rh.load_model_checkpoint(model, model_dir, device, hps)
 model = Cifar10Wrapper(model).to(device)
-if len(hps.gpu)>1:
-    model = nn.DataParallel(model, device_ids=device_ids)
 
 msda_config = rh.create_msda_config(hps)
 
@@ -75,6 +74,8 @@ if hps.train_type.lower() in ['ceda', 'acet', 'advacet', 'tradesacet', 'tradesce
     elif hps.od_dataset == 'cifar100':
         tiny_train = dl.get_CIFAR100(train=True, batch_size=od_bs, shuffle=True, augm_type=hps.augm,
                                      size=img_size, config_dict=od_config)
+    elif hps.od_dataset == 'openImages':
+        tiny_train = dl.get_openImages('train', batch_size=od_bs, shuffle=True, augm_type=hps.augm, size=img_size, exclude_dataset=None, config_dict=od_config)
 else:
     id_config = {}
     loader_config = {'ID config': id_config}
@@ -101,8 +102,8 @@ if trainer.requires_out_distribution():
     train_loaders, test_loaders = trainer.create_loaders_dict(train_loader, test_loader=test_loader,
                                                               out_distribution_loader=tiny_train)
     trainer.train(train_loaders, test_loaders, loader_config=loader_config, start_epoch=start_epoch,
-                  optim_state_dict=optim_state_dict)
+                  optim_state_dict=optim_state_dict, device_ids=device_ids)
 else:
     train_loaders, test_loaders = trainer.create_loaders_dict(train_loader, test_loader=test_loader)
     trainer.train(train_loaders, test_loaders, loader_config=loader_config, start_epoch=start_epoch,
-                  optim_state_dict=optim_state_dict)
+                  optim_state_dict=optim_state_dict, device_ids=device_ids)

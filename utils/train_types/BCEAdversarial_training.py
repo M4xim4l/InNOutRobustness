@@ -64,13 +64,9 @@ class BCEAdversarialTraining(InDistributionTraining):
                          saved_log_dir=saved_log_dir)
         self.id_attack_config = id_attack_config
 
-    @staticmethod
-    def create_id_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False, noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd, normalize_gradient=normalize_gradient, noise=noise)
-
-    def _get_id_criterion(self, epoch):
-        id_train_criterion = BCEAdversarialLoss(self.model, epoch, self.id_attack_config, True, 1, 1, self.classes,
-                                                log_stats=True, name_prefix='ID')
+    def _get_id_criterion(self, epoch, model, name_prefix='ID'):
+        id_train_criterion = BCEAdversarialLoss(model, epoch, self.id_attack_config, True, 1, 1, self.classes,
+                                                log_stats=True, name_prefix=name_prefix)
         return id_train_criterion
 
     def _get_id_accuracy_conf_logger(self, name_prefix):

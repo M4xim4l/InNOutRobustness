@@ -18,17 +18,25 @@ class AdversarialACET(InOutDistributionTraining):
                  train_clean=True,
                  attack_loss='LogitsDiff', lr_scheduler_config=None, model_config=None,
                  target_confidences=False,
-                 attack_obj='log_conf', train_obj='log_conf', lam=1., test_epochs=1, verbose=100,
+                 attack_obj='log_conf', train_obj='log_conf', od_weight=1., test_epochs=1, verbose=100,
                  saved_model_dir='SavedModels', saved_log_dir='Logs'):
 
         id_distance = get_distance(id_attack_config['norm'])
         od_distance = get_distance(od_attack_config['norm'])
 
+        if train_clean:
+            id_clean_weight = 1.0
+            id_adv_weight = 1.0
+        else:
+            id_clean_weight = 0.0
+            id_adv_weight = 1.0
+
         super().__init__('AdvACET', model, id_distance, od_distance, optimizer_config, epochs, device, num_classes,
-                         train_clean=train_clean,
-                         lr_scheduler_config=lr_scheduler_config, model_config=model_config,
-                         lam=lam, test_epochs=test_epochs,
-                         verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+                         train_clean=train_clean, id_weight=0.5, id_adv_weight=id_adv_weight, clean_weight=id_clean_weight,
+                         od_weight=0.5 * od_weight, od_clean_weight=0.0, od_adv_weight=1.0,
+                         lr_scheduler_config=lr_scheduler_config,
+                         model_config=model_config, test_epochs=test_epochs, verbose=verbose,
+                         saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
 
         # Adversarial specific
         self.id_attack_config = id_attack_config
@@ -40,16 +48,30 @@ class AdversarialACET(InOutDistributionTraining):
         self.od_attack_obj = attack_obj
         self.od_train_obj = train_obj
 
+
+    def _get_adversarialacet_config(self):
+        config_dict = {}
+        config_dict['Train Clean'] = self.train_clean
+        config_dict['Adversarial Loss'] = self.attack_loss
+        config_dict['ID Weight'] = self.id_weight
+        config_dict['Clean Weight'] = self.clean_weight
+        config_dict['Adversarial Weight'] = self.id_adv_weight
+
+        config_dict['OD Targeted Confidences'] = self.target_confidences
+        config_dict['OD Train Objective'] = self.od_train_obj
+        config_dict['OD Attack_obj'] = self.od_attack_obj
+        config_dict['OD Weight'] = self.od_weight
+        config_dict['OD Adversarial Weight'] = self.od_adv_weight
+
+        return config_dict
+
     def _get_train_type_config(self, loader_config=None):
         base_config = self._get_base_config()
-        ACET_config = self._get_ACET_config()
-        adv_config = self._get_adversarial_training_config()
 
         configs = {}
         configs['Base'] = base_config
-        configs['Adversarial Training'] = adv_config
         configs['ID Attack'] = self.id_attack_config
-        configs['ACET'] = ACET_config
+        configs['AdversarialACET'] = self._get_adversarialacet_config()
         configs['OD Attack'] = self.od_attack_config
         configs['Optimizer'] = self.optimizer_config
         configs['Scheduler'] = self.lr_scheduler_config
@@ -60,43 +82,26 @@ class AdversarialACET(InOutDistributionTraining):
 
         return configs
 
-    @staticmethod
-    def create_id_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False,
-                                noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd,
-                                    normalize_gradient=normalize_gradient, noise=noise)
-
-    def _get_id_criterion(self, epoch):
-        id_train_criterion = AdversarialLoss(self.model, epoch, self.id_attack_config, self.classes,
+    def _get_id_criterion(self, epoch, model, name_prefix='ID'):
+        id_train_criterion = AdversarialLoss(model, epoch, self.id_attack_config, self.classes,
                                              inner_objective=self.attack_loss,
-                                             log_stats=True, number_of_batches=None, name_prefix='ID')
+                                             log_stats=True, name_prefix=name_prefix)
         return id_train_criterion
 
-    def _get_adversarial_training_config(self):
-        return AdversarialTraining._get_adversarial_training_config(self)
+    def _get_od_clean_criterion(self, epoch, model, name_prefix='OD'):
+        return None
 
-    @staticmethod
-    def create_od_attack_config(eps, steps, stepsize, norm, momentum=0.9, pgd='pgd', normalize_gradient=False,
-                                noise=None):
-        return create_attack_config(eps, steps, stepsize, norm, momentum=momentum, pgd=pgd,
-                                    normalize_gradient=normalize_gradient, noise=noise)
-
-    def _get_od_criterion(self, epoch):
+    def _get_od_criterion(self, epoch, model, name_prefix='OD'):
         if self.target_confidences:
-            train_criterion = ACETTargetedObjective(self.model, epoch, self.od_attack_config, self.od_train_obj,
+            train_criterion = ACETTargetedObjective(model, epoch, self.od_attack_config, self.od_train_obj,
                                                     self.od_attack_obj, self.classes,
-                                                    log_stats=True, name_prefix='OD')
+                                                    log_stats=True, name_prefix=name_prefix)
         else:
-            train_criterion = ACETObjective(self.model, epoch, self.od_attack_config, self.od_train_obj,
+            train_criterion = ACETObjective(model, epoch, self.od_attack_config, self.od_train_obj,
                                             self.od_attack_obj, self.classes,
-                                            log_stats=True, name_prefix='OD')
+                                            log_stats=True, name_prefix=name_prefix)
         return train_criterion
 
     def _get_od_attack(self, epoch, att_criterion):
         return get_adversarial_attack(self.od_attack_config, self.model, att_criterion, num_classes=self.classes,
                                       epoch=epoch)
-
-    def _get_ACET_config(self):
-        ACET_config = {'targeted confidences': self.target_confidences, 'train_obj': self.od_train_obj,
-                       'attack_obj': self.od_attack_obj, 'lambda': self.lam}
-        return ACET_config
