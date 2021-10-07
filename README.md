@@ -25,7 +25,7 @@ To use these models, simply extract the .zip file in the project directory.
 | 500k-TI PGD  | 93.96          | 78.79                 | 
 | 500k-TI APGD | 93.70          | 79.24                 |
 
-###Setup
+### Setup
 Before running the code, you will have to update the base dataset path variable in Line 8 in:
 
 > utils.datasets.path
