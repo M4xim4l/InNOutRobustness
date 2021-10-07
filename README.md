@@ -37,7 +37,7 @@ If you want to train models on 500k-TI, download "ti_500K_pseudo_labeled.pickle"
 in your datasets folder. 
 
 
-###Creating Counterfactuals
+### Creating Counterfactuals
 To create counterfactual explanations for a trained model, you have to run:
 
 > cifar10_visualize_failure.py
@@ -49,13 +49,13 @@ The results can be found in the "Cifar10Eval" directory.
 
 ![Counterfactual](counterfactual.png)
 
-###Robustness evaluation
+### Robustness evaluation
 To evaluate our models on the CIFAR10 test set, run:
 
 > cifar10_robustness_test.py
 
 Note that this requires the [AutoAttack package](https://github.com/fra31/auto-attack).
-###Training new models
+### Training new models
 To train a new model on CIFAR10, use 
 
 > run_training_cifar10.py
