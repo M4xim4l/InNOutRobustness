@@ -1,13 +1,15 @@
 # Adversarial Robustness on In- and Out-Distribution Improves Explainability
 
-This is the official repository for the ECCV paper [Adversarial Robustness on In- and Out-Distribution Improves Explainability](https://arxiv.org/abs/2003.09461).
+This is the official implementation of our ECCV paper "[Adversarial Robustness on In- and Out-Distribution Improves Explainability](https://arxiv.org/abs/2003.09461)".  
+*Maximilian Augustin, Alexander Meinke, Matthias Hein*
 
 We have updated the source code to reflect the findings of the newer survey paper [Uncovering the Limits of Adversarial Training against Norm-Bounded Adversarial Examples](https://arxiv.org/abs/2010.03593).
 The changes to our original paper include:
 1. Use of a larger model architecture (WideResNet34x10 instead of ResNet50)
 2. Fixed number of attack steps (10/20 instead of increasing schedule)
+3. Proper Min Max optimization of the adversarial training objective instead of logit based-loss for inner maximization.
 4. Averaging of model weights (EMA)
-3. Optional: Additional unlabeled data from [500k-TI](https://arxiv.org/abs/1905.13736)
+5. Optional: Additional unlabeled data from [500k-TI](https://arxiv.org/abs/1905.13736)
 
 For CIFAR10 only training. we found AutoAugment to improve
 robustness whereas it decreases performance when combined with 500k-TI. All models with additional data
