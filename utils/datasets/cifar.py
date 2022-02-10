@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 from torchvision.datasets.vision import VisionDataset
 from torch.utils.data import DataLoader, Dataset
 
-from .cifar_augmentation import get_cifar10_augmentation
+from .augmentations.cifar_augmentation import get_cifar10_augmentation
 from .preproc import Gray
 import numpy as np
 #from .auto_augmen_old import AutoAugment

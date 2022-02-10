@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 import os
 
 from .paths import get_food_101_path
-from .imagenet_augmentation import get_imageNet_augmentation
+from .augmentations.imagenet_augmentation import get_imageNet_augmentation
 from torchvision.datasets.folder import default_loader
 
 

@@ -5,7 +5,7 @@ import torch.distributions
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets.folder import default_loader
 
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 from .paths import get_pets_path
 
 class_labels = ['Abyssinian', 'american bulldog', 'american pit bull terrier', 'basset hound', 'beagle', 'Bengal',

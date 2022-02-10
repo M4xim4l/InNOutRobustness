@@ -1,7 +1,7 @@
 from utils.models.models_32x32.resnet import ResNet50, ResNet18, ResNet34
 from utils.models.models_32x32.fixup_resnet import fixup_resnet20, fixup_resnet56
 from utils.models.models_32x32.wide_resnet import WideResNet28x2, WideResNet28x10, WideResNet28x20, WideResNet34x20, WideResNet40x10, WideResNet70x16, WideResNet34x10
-#from utils.models.models_32x32.shake_pyramidnet import ShakePyramidNet
+from timm.models.factory import create_model
 from utils.models.models_32x32.pyramid import aa_PyramidNet
 
 def try_number_conversion(s):
@@ -30,6 +30,7 @@ def build_model(model_name, num_classes, model_params=None):
     model_name = model_name.lower()
     model_config = parse_params(model_params)
 
+    img_size = 32
     if model_name == 'resnet18':
         model = ResNet18(num_classes=num_classes)
         model_name = 'ResNet18'
@@ -72,9 +73,17 @@ def build_model(model_name, num_classes, model_params=None):
     elif model_name == 'wideresnet70x16':
         model = WideResNet70x16(num_classes=num_classes)
         model_name = 'WideResNet70x16'
+    elif model_name == 'vit-b16':
+        model = create_model('vit_base_patch16_224_in21k', num_classes=num_classes, pretrained=True)
+        model_name = 'ViT-B16'
+        img_size = 224
+    elif model_name == 'vit-b32':
+        model = create_model('vit_base_patch32_224_in21k', num_classes=num_classes, pretrained=True)
+        model_name = 'ViT-B32'
+        img_size = 224
     else:
         print(f'Net {model_name} not supported')
         raise NotImplemented()
 
-    return model, model_name, model_config
+    return model, model_name, model_config, img_size
 

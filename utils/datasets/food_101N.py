@@ -1,10 +1,10 @@
 import torch
 import torch.distributions
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import os
 
 from .paths import get_food_101N_path
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 from torchvision.datasets.folder import default_loader
 import csv
 

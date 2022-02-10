@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 
 from .combo_dataset import ComboDataset
 from .paths import get_svhn_path
-from .svhn_augmentation import get_SVHN_augmentation
+from utils.datasets.augmentations.svhn_augmentation import get_SVHN_augmentation
 
 DEFAULT_TRAIN_BATCHSIZE = 128
 DEFAULT_TEST_BATCHSIZE = 128
@@ -38,7 +38,7 @@ def get_SVHN(split='train', shuffle = None, batch_size=None, augm_type='none', s
             shuffle = False
 
     augm_config = {}
-    transform = get_SVHN_augmentation(augm_type, size=size, config_dict=augm_config)
+    transform = get_SVHN_augmentation(augm_type, out_size=size, config_dict=augm_config)
 
     path = get_svhn_path()
     if split=='svhn_train_extra':

@@ -43,10 +43,11 @@ model_descriptions = [
     ('WideResNet34x10', 'cifar10_apgd', 'best_avg', None, False),
     ('WideResNet34x10', 'cifar10_500k_pgd', 'best_avg', None, False),
     ('WideResNet34x10', 'cifar10_500k_apgd', 'best_avg', None, False),
+    ('WideResNet34x10', 'cifar10_500k_apgd_asam', 'best_avg', None, False),
 ]
 
 model_batchsize = bs * np.ones(len(model_descriptions), dtype=np.int)
-num_examples = 100
+num_examples = 16
 
 dataloader = dl.get_CIFAR10(False, bs, augm_type='none')
 num_datapoints = len(dataloader.dataset)

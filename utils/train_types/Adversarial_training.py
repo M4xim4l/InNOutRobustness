@@ -61,14 +61,13 @@ class AdversarialTraining(InDistributionTraining):
         configs = {}
         configs['Base'] = base_config
         configs['Adversarial Training'] = adv_config
+        configs['ID Attack'] = self.id_attack_config
         configs['Optimizer'] = self.optimizer_config
         configs['Scheduler'] = self.lr_scheduler_config
         configs['MSDA'] = self.msda_config
-
         configs['Data Loader'] = loader_config
         configs['Model'] = self.model_config
 
-        configs['ID Attack'] = self.id_attack_config
 
         return configs
 

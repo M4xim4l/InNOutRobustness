@@ -90,8 +90,9 @@ class CEDATraining(OutDistributionTraining):
         distance = d.LPDistance(p=2)
         super().__init__('CEDA', model, distance, optimizer_config, epochs, device, num_classes,
                          clean_criterion=clean_criterion, lr_scheduler_config=lr_scheduler_config,
-                         msda_config=msda_config, model_config=model_config, od_weight=od_weight, test_epochs=test_epochs,
-                         verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+                         msda_config=msda_config, model_config=model_config, od_weight=od_weight,
+                         test_epochs=test_epochs, verbose=verbose, saved_model_dir=saved_model_dir,
+                         saved_log_dir=saved_log_dir)
 
         if CEDA_variant is None:
             self.CEDA_variant = {'Type': 'CEDA'}

@@ -20,13 +20,15 @@ from .helpers import interleave_forward
 ###################################OUT DISTRIBUTION TRAINING#########################################
 class OutDistributionTraining(TrainType):
     def __init__(self, name, model, od_distance, optimizer_config, epochs, device, num_classes, clean_criterion='ce',
-                 lr_scheduler_config=None, msda_config=None, model_config=None, od_weight=1., test_epochs=5,
-                 verbose=100, saved_model_dir='SavedModels', saved_log_dir='Logs'):
+                 lr_scheduler_config=None, msda_config=None, model_config=None, id_weight=1., od_weight=1.,
+                 test_epochs=5, verbose=100, saved_model_dir='SavedModels', saved_log_dir='Logs'):
 
         super().__init__(name, model, optimizer_config, epochs, device, num_classes,
                          clean_criterion=clean_criterion, lr_scheduler_config=lr_scheduler_config,
                          msda_config=msda_config, model_config=model_config, test_epochs=test_epochs,
                          verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
+
+        self.id_weight = id_weight
         self.od_weight = od_weight
         self.od_distance = od_distance
         self.od_iterator = None
@@ -116,6 +118,35 @@ class OutDistributionTraining(TrainType):
         if not 'out_distribution_loader' in train_loaders:
             raise ValueError('Out distribution cifar_loader is required for out distribution training')
 
+    def __get_loss_closure(self, clean_data, clean_target,
+                           od_adv_samples, od_data, od_target,
+                           clean_loss, od_train_criterion,
+                           total_loss_logger=None,
+                           lr_logger=None,
+                           acc_conf_clean=None,
+                           confidence_od=None,
+                           distance_od=None):
+
+        def loss_closure(log=False):
+            clean_out, od_out = interleave_forward(self.model, [clean_data, od_adv_samples], in_parallel=self.in_parallel)
+
+            loss1 = clean_loss(clean_data, clean_out, clean_data, clean_target)
+            loss2 = od_train_criterion(od_adv_samples, od_out, od_data, od_target)
+
+            loss = self.id_weight * loss1 + self.od_weight * loss2
+
+            if log:
+                # log
+                total_loss_logger.log(loss)
+                lr_logger.log(self.scheduler.get_last_lr()[0])
+
+                acc_conf_clean(clean_data, clean_out, clean_data, clean_target)
+                confidence_od(od_adv_samples, od_out, od_data, od_target)
+                distance_od(od_adv_samples, od_out, od_data, od_target)
+
+            return loss
+
+        return loss_closure
 
     def _inner_train(self, train_loaders, epoch, log_epoch=None):
         if log_epoch is None:
@@ -148,7 +179,7 @@ class OutDistributionTraining(TrainType):
         loggers = [total_loss_logger, acc_conf_clean, confidence_od, distance_od, lr_logger]
 
         self.output_backend.start_epoch_log(train_set_batches)
-        for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx, (clean_data, clean_target) in enumerate(train_loader):
             try:
                 od_data, od_target = next(self.od_iterator)
             except:
@@ -156,38 +187,29 @@ class OutDistributionTraining(TrainType):
                 len(out_distribution_loader.dataset)
                 od_data, od_target = next(self.od_iterator)
 
-            if data.shape[0] < bs or od_data.shape[0] < od_bs:
+            if clean_data.shape[0] < bs or od_data.shape[0] < od_bs:
                 continue
 
-            data = msda(data)
+            clean_data = msda(clean_data)
             od_data = od_msda(od_data)
 
-            data, target = data.to(self.device), target.to(self.device)
+            clean_data, clean_target = clean_data.to(self.device), clean_target.to(self.device)
             od_data, od_target = od_data.to(self.device), od_target.to(self.device)
 
-            od_adv_noise = od_train_criterion.inner_max(od_data, od_target)
+            od_adv_samples = od_train_criterion.inner_max(od_data, od_target)
 
             with amp.autocast(enabled=self.mixed_precision):
-                clean_out, od_out = interleave_forward(self.model, [data, od_adv_noise], in_parallel=self.in_parallel)
+                loss_closure = self.__get_loss_closure(clean_data, clean_target,
+                                   od_adv_samples, od_data, od_target,
+                                   clean_loss, od_train_criterion,
+                                   total_loss_logger=total_loss_logger,
+                                   lr_logger=lr_logger,
+                                   acc_conf_clean=acc_conf_clean,
+                                   confidence_od=confidence_od,
+                                   distance_od=distance_od)
 
-                loss1 = clean_loss(data, clean_out, data, target)
-                loss2 = od_train_criterion(od_adv_noise, od_out, od_data, od_target)
 
-                loss = 0.5 * loss1 + 0.5 * self.od_weight * loss2
-
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-
-            # log
-            total_loss_logger.log(loss)
-            lr_logger.log(self.scheduler.get_last_lr()[0])
-
-            acc_conf_clean(data, clean_out, data, target)
-            confidence_od(od_adv_noise, od_out, od_data, od_target)
-            distance_od(od_adv_noise, od_out, od_data, od_target)
-
+                self._loss_step(loss_closure)
             #ema
             if self.ema:
                 self._update_avg_model()
@@ -213,21 +235,26 @@ class OutDistributionTraining(TrainType):
         self.avg_model.train()
 
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(train_loader):
+            for batch_idx, (clean_data, clean_target) in enumerate(train_loader):
                 try:
                     od_data, od_target = next(self.od_iterator)
                 except:
                     self.od_iterator = iter(out_distribution_loader)
                     od_data, od_target = next(self.od_iterator)
 
-                if data.shape[0] < bs or od_data.shape[0] < od_bs:
+                if clean_data.shape[0] < bs or od_data.shape[0] < od_bs:
                     continue
 
-                data = msda(data)
+                clean_data = msda(clean_data)
                 od_data = od_msda(od_data)
 
-                data, target = data.to(self.device), target.to(self.device)
+                clean_data, clean_target = clean_data.to(self.device), clean_target.to(self.device)
                 od_data, od_target = od_data.to(self.device), od_target.to(self.device)
 
-                od_adv_noise = od_train_criterion.inner_max(od_data, od_target)
-                interleave_forward(self.avg_model, [data, od_adv_noise], in_parallel=self.in_parallel)
+                od_adv_samples = od_train_criterion.inner_max(od_data, od_target)
+                with amp.autocast(enabled=self.mixed_precision):
+                    loss_closure = self.__get_loss_closure(clean_data, clean_target,
+                                                           od_adv_samples, od_data, od_target,
+                                                           clean_loss, od_train_criterion)
+
+                    loss = loss_closure(log=False)

@@ -8,7 +8,7 @@ from torchvision.datasets.folder import default_loader
 from scipy.io import loadmat
 
 from .paths import get_flowers_path
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 
 FLOWERS_LABELS = [
                     "pink primrose", "hard-leaved pocket orchid", "canterbury bells",

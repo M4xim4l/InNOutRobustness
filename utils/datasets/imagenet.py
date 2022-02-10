@@ -2,8 +2,7 @@ import torch
 import torch.distributions
 from torchvision import datasets
 from torch.utils.data import DataLoader
-import os
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 from .paths import get_imagenet_path
 
 DEFAULT_TRAIN_BATCHSIZE = 128

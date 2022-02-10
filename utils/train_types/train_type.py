@@ -9,15 +9,14 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-from torch.nn.modules.batchnorm import _BatchNorm
 
-from utils.model_normalization import NormalizationWrapper
 from .output_backend import OutputBackend
 from .train_loss import CrossEntropyProxy, AccuracyConfidenceLogger, BCELogitsProxy, BCAccuracyConfidenceLogger,\
     KLDivergenceProxy, ConfidenceLogger, KLDivergenceEntropyMinimizationProxy
 from .schedulers import create_scheduler, create_cosine_annealing_scheduler_config, create_piecewise_consant_scheduler_config
 from .msda.factory import get_msda
-
+from .optimizers.sam import SAM
+from .helpers import enable_running_stats, disable_running_stats
 
 class TrainType:
     def __init__(self, type, model, optimizer_config, epochs, device, num_classes, lr_scheduler_config=None,
@@ -67,13 +66,18 @@ class TrainType:
 
     def _create_optimizer_scheduler(self):
         #OPTIMIZER
-        if self.optimizer_config['optimizer_type'] == 'ADAM':
+        self.sam_optimizer = None
+        if self.optimizer_config['optimizer_type'].lower() == 'adam':
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.optimizer_config['lr'], weight_decay=self.optimizer_config['weight_decay'])
-        elif self.optimizer_config['optimizer_type'] == 'Adadelta':
-            self.optimizer = optim.Adadelta(self.model.parameters(), lr=self.optimizer_config['lr'], weight_decay=self.optimizer_config['weight_decay'])
-        elif self.optimizer_config['optimizer_type'] == 'SGD':
+        elif self.optimizer_config['optimizer_type'].lower()  == 'sgd':
             self.optimizer = optim.SGD(self.model.parameters(), lr=self.optimizer_config['lr'], weight_decay=self.optimizer_config['weight_decay'], momentum=self.optimizer_config['momentum'],
                                         nesterov=self.optimizer_config['nesterov'])
+        elif self.optimizer_config['optimizer_type'].lower() == 'sam':
+            self.sam_optimizer = SAM(self.model.parameters(), optim.SGD, lr=self.optimizer_config['lr'],
+                                     weight_decay=self.optimizer_config['weight_decay'],
+                                     momentum=self.optimizer_config['momentum'],
+                                     nesterov=self.optimizer_config['nesterov'])
+            self.optimizer = self.sam_optimizer.base_optimizer
         else:
             raise ValueError('Optimizer not supported {}'.format(self.optimizer_config['optimizer_type']))
 
@@ -106,6 +110,8 @@ class TrainType:
 
         #MIXED PRECISION
         if 'mixed_precision' in self.optimizer_config and self.optimizer_config['mixed_precision']:
+            if self.sam_optimizer is not None:
+                raise NotImplementedError('SAM and MixedPrecision not supported in combination')
             print('Using mixed precision training')
             self.scaler = amp.GradScaler(enabled=True)
             self.mixed_precision = True
@@ -185,14 +191,6 @@ class TrainType:
                 loss = CrossEntropyProxy(log_stats=log_stats, name_prefix=name_prefix)
             else:
                 loss = KLDivergenceProxy(log_stats=log_stats, name_prefix=name_prefix)
-        elif 'klEntropy' in self.clean_criterion:
-            #klEntropy_WEIGHT
-            if test:
-                loss = CrossEntropyProxy(log_stats=log_stats, name_prefix=name_prefix)
-            else:
-                entropy_weight = float(self.clean_criterion[10:])
-                loss = KLDivergenceEntropyMinimizationProxy(entropy_weight=entropy_weight, log_stats=log_stats,
-                                                            name_prefix=name_prefix)
         else:
             raise NotImplementedError()
 
@@ -207,13 +205,14 @@ class TrainType:
             return AccuracyConfidenceLogger(name_prefix=name_prefix)
         elif self.clean_criterion == 'bce':
             return BCAccuracyConfidenceLogger(self.classes, name_prefix=name_prefix)
-        elif self.clean_criterion in ['kl', 'KL'] or 'klEntropy' in self.clean_criterion:
+        elif self.clean_criterion in ['kl', 'KL']:
             if test:
                 return AccuracyConfidenceLogger(name_prefix=name_prefix)
             else:
                 return ConfidenceLogger(name_prefix=name_prefix)
         else:
             raise NotImplementedError()
+
 
     def test(self, test_loaders, epoch, test_avg_model=False):
         new_best = False
@@ -274,6 +273,26 @@ class TrainType:
 
         return test_accuracy
 
+    def _loss_step(self, loss_closure):
+        if self.sam_optimizer is not None:
+            # first forward-backward step
+            enable_running_stats(self.model)  # <- this is the important line
+            loss = loss_closure(log=True)
+            loss.backward()
+            self.sam_optimizer.first_step(zero_grad=True)
+
+            # second forward-backward step
+            disable_running_stats(self.model)  # <- this is the important line
+            loss = loss_closure(log=False)
+            loss.backward()
+            self.sam_optimizer.second_step(zero_grad=True)
+        else:
+            loss = loss_closure(log=True)
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
     def get_model_state_dict(self):
         return self.non_parallel_model.state_dict()
 
@@ -312,6 +331,7 @@ class TrainType:
         num_batches = len(loader)
         return num_batches
 
+
     def reset_optimizer(self, start_epoch, optim_state_dict):
         if optim_state_dict is not None:
             self.optimizer.load_state_dict(optim_state_dict)
@@ -319,7 +339,6 @@ class TrainType:
         if start_epoch > 0:
             print(f'Resetting scheduler to epoch: {start_epoch}')
             self._update_scheduler(start_epoch)
-
 
     def train(self, train_loaders, test_loaders, loader_config, start_epoch=0, optim_state_dict=None, device_ids=None):
         self._validate_loaders(train_loaders, test_loaders)

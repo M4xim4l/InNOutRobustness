@@ -16,6 +16,7 @@ from utils.load_trained_model import load_model
 import utils.datasets as dl
 
 model_descriptions = [
+    ('WideResNet34x10', 'cifar10_500k_apgd_asam', 'best_avg', None, False),
     ('WideResNet34x10', 'cifar10_pgd', 'best_avg', None, False),
     ('WideResNet34x10', 'cifar10_apgd', 'best_avg', None, False),
     ('WideResNet34x10', 'cifar10_500k_pgd', 'best_avg', None, False),

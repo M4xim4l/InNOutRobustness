@@ -1,8 +1,10 @@
 from torchvision import transforms
+from torchvision.transforms.functional import InterpolationMode
 import torch
-from utils.datasets.autoaugment import ImageNetPolicy, CIFAR10Policy
-from utils.datasets.cifar_augmentation import CIFAR10_mean_int, CIFAR10_mean
-from utils.datasets.cutout import Cutout
+from .autoaugment import ImageNetPolicy, CIFAR10Policy
+from .cutout import Cutout
+from .cifar_augmentation import CIFAR10_mean
+from PIL import Image
 
 # lighting transform
 # https://git.io/fhBOc
@@ -44,7 +46,7 @@ ImageNet_mean_int = ( int( 255 * 0.485), int(255 * 0.456), int(255 * 0.406))
 def get_imageNet_augmentation(type='default', out_size=224, config_dict=None):
     if type == 'none' or type is None:
         transform_list = [
-            transforms.Resize((out_size,out_size)),
+            transforms.Resize((out_size,out_size), interpolation=InterpolationMode.BICUBIC),
             transforms.ToTensor()
         ]
         transform = transforms.Compose(transform_list)
@@ -107,11 +109,13 @@ def get_imageNet_augmentation(type='default', out_size=224, config_dict=None):
         ]
     elif type == 'autoaugment_cutout':
         padding_size = int(4 * out_size / 32)
+        mean_int = tuple(int(255. * v) for v in CIFAR10_mean)
+
         transform_list = [
             transforms.transforms.Resize((out_size, out_size)),
-            transforms.transforms.RandomCrop((out_size, out_size), padding=padding_size, fill=CIFAR10_mean_int),
+            transforms.transforms.RandomCrop((out_size, out_size), padding=padding_size, fill=mean_int),
             transforms.RandomHorizontalFlip(),
-            CIFAR10Policy(fillcolor=CIFAR10_mean_int),
+            CIFAR10Policy(fillcolor=mean_int),
         ]
     else:
         raise ValueError(f'augmentation type - {type} - not supported')
@@ -120,7 +124,8 @@ def get_imageNet_augmentation(type='default', out_size=224, config_dict=None):
         print('Warning using CIFAR10 Cutout')
         cutout_size = int(0.5 * out_size)
         transform_list.append(transforms.ToTensor())
-        transform_list.append(Cutout(n_holes=1, length=cutout_size, fill_color=CIFAR10_mean))
+        CIFAR10_mean_tensor = torch.FloatTensor(CIFAR10_mean)
+        transform_list.append(Cutout(n_holes=1, length=cutout_size, fill_color=CIFAR10_mean_tensor))
     else:
         transform_list.append(transforms.ToTensor())
 

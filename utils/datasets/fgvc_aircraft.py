@@ -1,10 +1,9 @@
 import torch.utils.data as data
-from torchvision.datasets.folder import pil_loader, accimage_loader, default_loader
-from PIL import Image
+from torchvision.datasets.folder import default_loader
 import os
 import numpy as np
 import torch
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 from .paths import get_fgvc_aircraft_path
 
 

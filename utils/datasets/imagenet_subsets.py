@@ -4,9 +4,7 @@ from torchvision import datasets
 from torch.utils.data import DataLoader, Dataset, Sampler, SubsetRandomSampler
 
 from .paths import get_imagenet_path
-from .imagenet_augmentation import get_imageNet_augmentation
-from PIL import Image
-import pickle
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 import numpy as np
 
 DEFAULT_TRAIN_BATCHSIZE = 128
@@ -505,7 +503,7 @@ def get_ImageNetCloseToCifar(train=True, batch_size=None, shuffle=None, augm_typ
     augm_config = {}
     transform = get_imageNet_augmentation(type=augm_type, out_size=size, config_dict=augm_config)
     if not train and augm_type != 'test' and augm_type != 'none':
-        print('Warning: ImageNet test set with ref_data augmentation')
+        print('Warning: ImageNet test set with data augmentation')
 
     if shuffle is None:
         shuffle = train

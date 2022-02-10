@@ -1,12 +1,11 @@
 import torch
 import torch.distributions
-from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 import numpy as np
 
 from .paths import get_openimages_path
-from .imagenet_augmentation import get_imageNet_augmentation
+from utils.datasets.augmentations.imagenet_augmentation import get_imageNet_augmentation
 import os
 
 DEFAULT_TRAIN_BATCHSIZE = 128

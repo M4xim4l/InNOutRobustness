@@ -3,6 +3,8 @@ import torch.nn.functional as F
 from utils.adversarial_attacks import PGD, MonotonePGD, APGDAttack, ArgminPGD, UniformNoiseGenerator,\
     NormalNoiseGenerator, L2FABAttack, LinfFABAttack, CutoutPGD
 from utils.distances import LPDistance
+from torch.nn.modules.batchnorm import _BatchNorm
+
 #########
 def interleave_forward(model, batches, in_parallel=True):
     # interleave ref_data to preserve batch statistics on parallel computations
@@ -145,12 +147,34 @@ def get_adversarial_attack(config, model, att_criterion, num_classes, epoch=0):
 
 
 def get_distance(norm):
-    if norm in ['inf', 'linf', "Lif"]:
+    if norm in ['inf', 'linf', 'Linf', 'LINF']:
         distance = LPDistance(p='inf')
-    elif norm in ['2', 'l2', "L2", '2', 2]:
-        distance = LPDistance(p=2)
-    elif norm in ['1', 'l1', 'L1', '1', 1]:
-        distance = LPDistance(p=1)
     else:
-        raise ValueError('Distance not supported')
+        try:
+            if isinstance(norm, str):
+                if norm.lower()[0] == 'l':
+                    norm = norm[1:]
+                p = float(norm)
+            else:
+                p = float(norm)
+            distance = LPDistance(p=p)
+        except Exception as e:
+            raise NotImplementedError('Norm not supported')
+
     return distance
+
+
+def disable_running_stats(model):
+    def _disable(module):
+        if issubclass(type(module), _BatchNorm):
+            module.backup_momentum = module.momentum
+            module.momentum = 0
+
+    model.apply(_disable)
+
+def enable_running_stats(model):
+    def _enable(module):
+        if issubclass(type(module), _BatchNorm) and hasattr(module, "backup_momentum"):
+            module.momentum = module.backup_momentum
+
+    model.apply(_enable)

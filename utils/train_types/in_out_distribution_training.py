@@ -84,6 +84,7 @@ class InOutDistributionTraining(OutDistributionTraining):
 
         return new_best
 
+
     def _forward(self, model, clean_data, id_data, clean_od_data, od_data):
         data_list = []
         data_order = [clean_data, id_data, clean_od_data, od_data]
@@ -108,6 +109,68 @@ class InOutDistributionTraining(OutDistributionTraining):
                 out_list.append(outs[idx])
 
         return out_list
+
+    def __get_loss_closure(self, clean_data, clean_target, id_adv_samples, id_data, id_target,
+                           clean_od_data, clean_od_target, od_adv_samples, od_data, od_target,
+                           clean_loss, id_train_criterion, od_clean_loss, od_train_criterion,
+                           total_loss_logger=None,
+                           lr_logger=None,
+                           acc_conf_clean=None,
+                           acc_conf_id=None,
+                           distance_id=None,
+                           confidence_od=None,
+                           distance_od=None):
+
+        def loss_closure(log=False):
+            clean_out, id_adv_out, od_clean_out, od_adv_out = \
+                self._forward(self.model, clean_data, id_adv_samples, clean_od_data, od_adv_samples)
+
+            # clean loss for clean adv training and trades
+            if self.train_clean or self.id_trades:
+                loss0 = clean_loss(clean_data, clean_out, clean_data, clean_target)
+            else:
+                loss0 = torch.tensor(0.0, device=self.device)
+
+            if self.id_trades:
+                id_hard_label = clean_target
+                id_tar = F.softmax(clean_out, dim=1)
+            else:
+                id_hard_label = id_target
+                id_tar = id_target
+
+            # adversarial loss / trades regularizer
+            loss1 = id_train_criterion(id_adv_samples, id_adv_out, id_data, id_tar)
+
+            # od clean loss for od trades
+            if self.od_trades:
+                od_tar = F.softmax(od_clean_out, dim=1)
+                loss2 = od_clean_loss(clean_od_data, od_clean_out, clean_od_data, clean_od_target)
+            else:
+                od_tar = od_target
+                loss2 = torch.tensor(0.0, device=self.device)
+
+            # od acet loss / trades regularizer
+            loss3 = od_train_criterion(od_adv_samples, od_adv_out, od_data, od_tar)
+
+            loss = self.id_weight * (self.clean_weight * loss0 + self.id_adv_weight * loss1)
+            loss += self.od_weight * (self.od_clean_weight * loss2 + self.od_adv_weight * loss3)
+
+            if log:
+                total_loss_logger.log(loss)
+                lr_logger.log(self.scheduler.get_last_lr()[0])
+
+                # log
+                if self.train_clean or self.id_trades:
+                    acc_conf_clean(clean_data, clean_out, clean_data, clean_target)
+
+                acc_conf_id(id_adv_samples, id_adv_out, id_data, id_hard_label)
+                distance_id(id_adv_samples, id_adv_out, id_data, id_hard_label)
+
+                confidence_od(od_adv_samples, od_adv_out, od_data, od_target)
+                distance_od(od_adv_samples, od_adv_out, od_data, od_target)
+
+            return loss
+        return loss_closure
 
     def _inner_train(self, train_loaders, epoch, log_epoch=None):
         train_loader = train_loaders['train_loader']
@@ -194,54 +257,19 @@ class InOutDistributionTraining(OutDistributionTraining):
             od_adv_samples = od_train_criterion.inner_max(od_data, od_target)
 
             with amp.autocast(enabled=self.mixed_precision):
-                clean_out, id_adv_out, od_clean_out, od_adv_out = \
-                    self._forward(self.model, clean_data, id_adv_samples, clean_od_data, od_adv_samples)
+                loss_closure = self.__get_loss_closure(clean_data, clean_target, id_adv_samples, id_data, id_target,
+                                                       clean_od_data, clean_od_target, od_adv_samples, od_data, od_target,
+                                                       clean_loss, id_train_criterion, od_clean_loss, od_train_criterion,
+                                                       total_loss_logger=total_loss_logger,
+                                                       lr_logger=lr_logger,
+                                                       acc_conf_clean=acc_conf_clean,
+                                                       acc_conf_id=acc_conf_id,
+                                                       distance_id=distance_id,
+                                                       confidence_od=confidence_od,
+                                                       distance_od=distance_od)
 
-                #clean loss for clean adv training and trades
-                if self.train_clean or self.id_trades:
-                    loss0 = clean_loss(clean_data, clean_out, clean_data, clean_target)
-                else:
-                    loss0 = torch.tensor(0.0, device=self.device)
 
-                if self.id_trades:
-                    id_hard_label = clean_target
-                    id_target = F.softmax(clean_out, dim=1)
-                else:
-                    id_hard_label = id_target
-
-                #adversarial loss / trades regularizer
-                loss1 = id_train_criterion(id_adv_samples, id_adv_out, id_data, id_target)
-
-                #od clean loss for od trades
-                if self.od_trades:
-                    od_target = F.softmax(od_clean_out, dim=1)
-                    loss2 = od_clean_loss(clean_od_data, od_clean_out, clean_od_data, clean_od_target)
-                else:
-                    loss2 = torch.tensor(0.0, device=self.device)
-
-                #od acet loss / trades regularizer
-                loss3 = od_train_criterion(od_adv_samples, od_adv_out, od_data, od_target)
-
-                loss = self.id_weight * (self.clean_weight * loss0 + self.id_adv_weight * loss1)
-                loss += self.od_weight * (self.od_clean_weight * loss2 + self.od_adv_weight * loss3)
-
-            self.optimizer.zero_grad()
-            self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
-            self.optimizer.step()
-
-            total_loss_logger.log(loss)
-            lr_logger.log(self.scheduler.get_last_lr()[0])
-
-            # log
-            if self.train_clean or self.id_trades:
-                acc_conf_clean(clean_data, clean_out, clean_data, clean_target)
-
-            acc_conf_id(id_adv_samples, id_adv_out, id_data, id_hard_label)
-            distance_id(id_adv_samples, id_adv_out, id_data, id_hard_label)
-
-            confidence_od(od_adv_samples, od_adv_out, od_data, od_target)
-            distance_od(od_adv_samples, od_adv_out, od_data, od_target)
+                self._loss_step(loss_closure)
 
             #ema
             if self.ema:
@@ -261,6 +289,7 @@ class InOutDistributionTraining(OutDistributionTraining):
 
         clean_loss = self._get_clean_criterion()
         id_train_criterion = self._get_id_criterion(0, self.avg_model)
+        od_clean_loss = self._get_od_clean_criterion(epoch, self.model, name_prefix='OD')
         od_train_criterion = self._get_od_criterion(0, self.avg_model)
         bs = self._get_loader_batchsize(train_loader)
         od_bs = self._get_loader_batchsize(out_distribution_loader)
@@ -319,5 +348,10 @@ class InOutDistributionTraining(OutDistributionTraining):
                 od_adv_samples = od_train_criterion.inner_max(od_data, od_target)
 
                 with amp.autocast(enabled=self.mixed_precision):
-                    clean_out, id_adv_out, od_clean_out, od_adv_out = \
-                        self._forward(self.model, clean_data, id_adv_samples, clean_od_data, od_adv_samples)
+                    loss_closure = self.__get_loss_closure(clean_data, clean_target, id_adv_samples, id_data, id_target,
+                                                           clean_od_data, clean_od_target, od_adv_samples, od_data,
+                                                           od_target,
+                                                           clean_loss, id_train_criterion, od_clean_loss,
+                                                           od_train_criterion)
+
+                    loss_closure(log=False)

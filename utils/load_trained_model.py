@@ -2,114 +2,76 @@ import torch
 import os
 
 from utils.models.models_32x32.resnet import ResNet18, ResNet34, ResNet50
-from utils.models.models_32x32.wide_resnet import WideResNet28x10, WideResNet34x20
 from utils.models.models_32x32.wideresnet_carmon import WideResNet as WideResNetCarmon
-from utils.models.models_32x32.fixup_resnet import fixup_resnet56
-from utils.models.models_32x32.shake_pyramidnet import ShakePyramidNet
 from utils.models.model_factory_32 import build_model as build_model32
 from utils.models.model_factory_224 import build_model as build_model224
 from torchvision import models
 import torch.nn as nn
+from torchvision import models as torch_models
 
-from utils.models.models_224x224.resnet_224 import resnet50 as imagenet_resnet50
-from utils.models.models_224x224.efficientnet import EfficientNet
 from utils.model_normalization import Cifar10Wrapper, Cifar100Wrapper, SVHNWrapper,\
     ImageNetWrapper, RestrictedImageNetWrapper, BigTransferWrapper
 from utils.temperature_wrapper import TemperatureWrapper
 import utils.models.ebm_wrn as wrn
 from utils.models.big_transfer_factory import build_model_big_transfer
+from utils.datasets.paths import get_CIFAR10_path, get_imagenet_path
 
 
 def load_non_native_model(type, folder, device):
-    # if type == 'EBM':
-    #     f = wrn.CCF(depth=28, width=10, norm=None)
-    #
-    #     file = 'Cifar10Models/EBM/CIFAR10_MODEL.pt'
-    #     state_dict = torch.load(file)
-    #     f.load_state_dict(state_dict["model_state_dict"])
-    #
-    #     # n_steps_refine is number of pre sampling steps
-    #     f = wrn.DummyModel(f, n_steps_refine=0)
-    #
-    #     # Use this line if you want to be able to run an adaptive attack
-    #     # only matters if n_steps_refine>0
-    #     # might blow up your memory though...
-    #     f.detach = False
-    #     density_model = f.to(device)
-    #     density_model.eval()
-    #
-    #     density_model = wrn.gradient_attack_wrapper(density_model)
-    # elif type == 'MadryCifarResNet50':
-    #     from robustness import model_utils, datasets
-    #
-    #     DATA = 'CIFAR'
-    #     DATA_SHAPE = 32
-    #     DATA_PATH_DICT = {
-    #         'CIFAR': '../ref_data'
-    #     }
-    #
-    #     dataset_function = getattr(datasets, DATA)
-    #     dataset = dataset_function(DATA_PATH_DICT[DATA])
-    #
-    #     model_kwargs = {
-    #         'arch': 'resnet50',
-    #         'dataset': dataset,
-    #         'resume_path': f'Cifar10Models/MadryModels/ResNet50/{folder}.pt',
-    #         'parallel' : False
-    #     }
-    #
-    #     class MadryWrapper(torch.nn.Module):
-    #         def __init__(self, density_model, normalizer):
-    #             super().__init__()
-    #             self.density_model = density_model
-    #             self.normalizer = normalizer
-    #
-    #         def forward(self, img):
-    #             normalized_inp = self.normalizer(img)
-    #             output = self.density_model(normalized_inp, with_latent=False,
-    #                                 fake_relu=False, no_relu=False)
-    #             return output
-    #
-    #     model_madry, _ = model_utils.make_and_restore_model(**model_kwargs)
-    #
-    #     density_model = MadryWrapper(model_madry.density_model, model_madry.normalizer)
-    #     density_model.to(device)
-    #     density_model.eval()
-    # elif type == 'MadryRestrictedImageNet50':
-    #     from robustness import model_utils, datasets
-    #     dataset = datasets.DATASETS['restricted_imagenet']('/home/scratch/datasets/ImageNet/')
-    #     model_kwargs = {
-    #         'arch': 'resnet50',
-    #         'dataset': dataset,
-    #         'resume_path': f'RestrictedImageNetModels/MadryResNet50/{folder}.pt',
-    #         'parallel' : False
-    #     }
-    #
-    #     class MadryWrapper(torch.nn.Module):
-    #         def __init__(self, density_model, normalizer):
-    #             super().__init__()
-    #             self.density_model = density_model
-    #             self.normalizer = normalizer
-    #
-    #         def forward(self, img):
-    #             normalized_inp = self.normalizer(img)
-    #             output = self.density_model(normalized_inp, with_latent=False,
-    #                                 fake_relu=False, no_relu=False)
-    #             return output
-    #
-    #     model_madry, _ = model_utils.make_and_restore_model(**model_kwargs)
-    #
-    #     density_model = MadryWrapper(model_madry.density_model, model_madry.normalizer)
-    #     density_model.to(device)
-    #     density_model.eval()
-    if type == 'TRADESReference':
+    if 'Madry' in type:
+        from robustness import model_utils, datasets
+
+        class MadryWrapper(torch.nn.Module):
+            def __init__(self, model, normalizer):
+                super().__init__()
+                self.model = model
+                self.normalizer = normalizer
+
+            def forward(self, img):
+                normalized_inp = self.normalizer(img)
+                output = self.model(normalized_inp, with_latent=False,
+                                    fake_relu=False, no_relu=False)
+                return output
+
+        if type == 'MadryRestrictedImageNet50':
+            dataset = datasets.DATASETS['restricted_imagenet'](get_imagenet_path())
+            resume_path = f'RestrictedImageNetModels/MadryModels/ResNet50/{folder}.pt'
+        elif type == 'MadryImageNet50':
+            dataset = datasets.DATASETS['imagenet'](get_imagenet_path())
+            resume_path = f'ImageNetModels/MadryModels/ResNet50/{folder}.pt'
+        elif type == 'MadryCifar50':
+            dataset = datasets.DATASETS['cifar'](get_CIFAR10_path())
+            resume_path = f'Cifar10Models/MadryModels/ResNet50/{folder}.pt'
+        else:
+            raise NotImplementedError()
+
+        model_kwargs = {
+            'arch': 'resnet50',
+            'dataset': dataset,
+            'resume_path': resume_path,
+            'parallel' : False
+        }
+        model_madry, _ = model_utils.make_and_restore_model(**model_kwargs)
+
+        model = MadryWrapper(model_madry.model, model_madry.normalizer)
+        model.to(device)
+        model.eval()
+    elif type == 'PytorchResNet50':
+        model = torch_models.resnet50()
+        state_dict_file = f'ImageNetModels/PytorchModels/ResNet50/{folder}.pt'
+        state_dict = torch.load(state_dict_file, map_location=device)
+        model.load_state_dict(state_dict)
+        model = ImageNetWrapper(model)
+        model = model.to(device)
+        model.eval()
+    elif type == 'TRADESReference':
         model = ResNet50(num_classes=10)
         state_dict_file = f'{folder}.pt'
         state_dict = torch.load(state_dict_file, map_location=device)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
-    if type == 'Carmon':
+    elif type == 'Carmon':
         model = WideResNetCarmon(num_classes=10, depth=28, widen_factor=10)
         state_dict_file = f'Cifar10Models/{folder}.pt'
         checkpoint = torch.load(state_dict_file, map_location=device)
@@ -145,10 +107,10 @@ def get_filename(folder, architecture_folder, checkpoint, load_temp):
     return state_dict_file
 
 
-non_native_model = ['EBM', 'Madry50', 'TRADESReference', 'MadryRestrictedImageNet50', 'Carmon']
+non_native_model = ['PytorchResNet50', 'Madry50', 'TRADESReference', 'MadryRestrictedImageNet50', 'MadryImageNet50', 'Carmon']
 
 def load_cifar_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False, model_params=None):
-    model, model_folder_post, _ = build_model32(type, num_classes, model_params=model_params)
+    model, model_folder_post, _, img_size = build_model32(type, num_classes, model_params=model_params)
     state_dict_file = get_filename(folder, os.path.join(dataset_dir, model_folder_post), checkpoint, load_temp)
     state_dict = torch.load(state_dict_file, map_location=device)
     model.load_state_dict(state_dict)
@@ -162,29 +124,10 @@ def load_big_transfer_model(type, folder, checkpoint, device, dataset_dir, num_c
     return model
 
 def load_imagenet_family_model(type, folder, checkpoint, device, dataset_dir, num_classes, load_temp=False, model_params=None):
-    if type == 'efficientnet-b0':
-        model = EfficientNet.from_name('efficientnet-b0', override_params={'num_classes': num_classes})
-        state_dict_file = get_filename(folder, f'{dataset_dir}//EfficientNet-B0', checkpoint, load_temp)
-        state_dict = torch.load(state_dict_file, map_location=device)
-        model.load_state_dict(state_dict)
-    # elif type == 'ResNet50':
-    #     #density_model = imagenet_resnet50(pretrained=False, num_classes=num_classes)
-    #     model = models.resnet50(pretrained=False)
-    #     num_ftrs = model.fc.in_features
-    #     model.fc = nn.Linear(num_ftrs, num_classes)
-    #     state_dict_file = get_filename(folder, f'{dataset_dir}//ResNet50', checkpoint, load_temp)
-    #     state_dict = torch.load(state_dict_file, map_location=device)
-    #     model.load_state_dict(state_dict)
-    # elif type == 'ResNet50':
-    #     model = imagenet_resnet50(pretrained=False, num_classes=num_classes)
-    #     state_dict_file = get_filename(folder, f'{dataset_dir}//ResNet50', checkpoint, load_temp)
-    #     state_dict = torch.load(state_dict_file, map_location=device)
-    #     model.load_state_dict(state_dict)
-    else:
-        model, model_folder_post, _ = build_model224(type, num_classes, **model_params)
-        state_dict_file = get_filename(folder, f'{dataset_dir}/{model_folder_post}', checkpoint, load_temp)
-        state_dict = torch.load(state_dict_file, map_location=device)
-        model.load_state_dict(state_dict)
+    model, model_folder_post, _ = build_model224(type, num_classes, **model_params)
+    state_dict_file = get_filename(folder, f'{dataset_dir}/{model_folder_post}', checkpoint, load_temp)
+    state_dict = torch.load(state_dict_file, map_location=device)
+    model.load_state_dict(state_dict)
 
     return model
 

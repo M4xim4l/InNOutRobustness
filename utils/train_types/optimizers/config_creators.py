@@ -2,12 +2,21 @@ def create_optimizer_config(optimizer_type, lr,
                             weight_decay=0, momentum=0, nesterov=False,
                             mixed_precision=False, ema=False, ema_decay=0.990):
     optimizer_config = {'optimizer_type': optimizer_type, 'lr': lr, 'weight_decay': weight_decay,
-                        'mixed_precision': mixed_precision, 'ema': ema, 'ema_decay': ema_decay}
-    if optimizer_type == 'SGD':
+                        'mixed_precision': mixed_precision, 'ema': ema, 'ema_decay': ema_decay, }
+    if optimizer_type.lower() == 'sgd':
         optimizer_config['momentum'] = momentum
         optimizer_config['nesterov'] = nesterov
     return optimizer_config
 
+def create_sam_optimizer_config(lr,
+                            weight_decay=0, momentum=0, nesterov=False,
+                            sam_rho=0.05, sam_adaptive=False,
+                            ema=False, ema_decay=0.990):
+    optimizer_config = {'optimizer_type': 'SAM', 'lr': lr, 'weight_decay': weight_decay,
+                        'momentum': momentum, 'nesterov': nesterov,
+                        'sam_rho': sam_rho, 'sam_adaptive': sam_adaptive,
+                        'ema': ema, 'ema_decay': ema_decay, }
+    return optimizer_config
 
 def add_cosine_swa_to_optimizer_config(epochs, cycle_length, update_frequency,
                                        virtual_schedule_length, virtual_schedule_swa_end,

@@ -1,13 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
 from .train_type import TrainType
-from .train_loss import TrainLoss, CrossEntropyProxy, AccuracyConfidenceLogger, DistanceLogger, SingleValueLogger
+from .train_loss import AccuracyConfidenceLogger, DistanceLogger, SingleValueLogger
 
-from utils.adversarial_attacks import *
-from utils.distances import LPDistance
 from .helpers import interleave_forward
 import torch.cuda.amp as amp
 
@@ -15,11 +12,12 @@ import torch.cuda.amp as amp
 class InDistributionTraining(TrainType):
     def __init__(self, name, model, id_distance, optimizer_config, epochs, device, num_classes,
                  clean_criterion='ce', train_clean=True, id_trades=False, clean_weight=1.0, id_adv_weight=1.0,
-                 lr_scheduler_config=None, model_config=None,
+                 lr_scheduler_config=None, msda_config=None, model_config=None,
                  test_epochs=1, verbose=100, saved_model_dir='SavedModels', saved_log_dir='Logs'):
         super().__init__(name, model, optimizer_config, epochs, device, num_classes,
                          clean_criterion=clean_criterion,
-                         lr_scheduler_config=lr_scheduler_config, model_config=model_config, test_epochs=test_epochs,
+                         lr_scheduler_config=lr_scheduler_config, msda_config=msda_config,
+                         model_config=model_config, test_epochs=test_epochs,
                          verbose=verbose, saved_model_dir=saved_model_dir, saved_log_dir=saved_log_dir)
 
         self.train_clean = train_clean
@@ -71,7 +69,7 @@ class InDistributionTraining(TrainType):
 
     def _inner_test(self, model, test_loader, epoch, prefix='Clean', id_prefix='ID', *args, **kwargs):
         test_set_batches = len(test_loader)
-        clean_loss = self._get_clean_criterion(log_stats=True, name_prefix=prefix)
+        clean_loss = self._get_clean_criterion(test=True, log_stats=True, name_prefix=prefix)
 
         id_train_criterion = self._get_id_criterion(0, model,
                                                     name_prefix=id_prefix)  #set 0 as epoch so it uses same attack steps every time
@@ -108,6 +106,49 @@ class InDistributionTraining(TrainType):
         id_acc = acc_conf_adv.get_accuracy()
         return id_acc
 
+    def __get_loss_closure(self, clean_data, clean_target, id_adv_samples, id_data, id_target,
+                           clean_loss, id_train_criterion,
+                           total_loss_logger=None,
+                           lr_logger=None,
+                           acc_conf_clean=None,
+                           acc_conf_adv=None,
+                           distance_adv=None
+                           ):
+
+        def loss_closure(log=False):
+            if self.train_clean or self.id_trades:
+                clean_out, adv_out = interleave_forward(self.model, [clean_data, id_adv_samples])
+
+                if self.id_trades:
+                    id_hard_label = clean_target
+                    id_tar = F.softmax(clean_out, dim=1)
+                else:
+                    id_hard_label = id_target
+                    id_tar = id_target
+
+                loss0 = clean_loss(clean_data, clean_out, clean_data, clean_target)
+                loss1 = id_train_criterion(id_adv_samples, adv_out, id_data, id_tar)
+                loss = self.clean_weight * loss0 + self.id_adv_weight * loss1
+            else:
+                id_hard_label = id_target
+                adv_out = self.model(id_adv_samples)
+                clean_out = None
+                loss = id_train_criterion(id_adv_samples, adv_out, id_data, id_target)
+
+            if log:
+                total_loss_logger.log(loss)
+                lr_logger.log(self.scheduler.get_last_lr()[0])
+
+                # log
+                if self.train_clean or self.id_trades:
+                    acc_conf_clean(clean_data, clean_out, clean_data, clean_target)
+
+                acc_conf_adv(id_adv_samples, adv_out, id_data, id_hard_label)
+                distance_adv(id_adv_samples, adv_out, id_data, id_hard_label)
+            return loss
+
+        return loss_closure
+
     def _inner_train(self, train_loaders, epoch, log_epoch=None):
         if log_epoch is None:
             log_epoch = epoch
@@ -136,7 +177,6 @@ class InDistributionTraining(TrainType):
         for batch_idx, (id_data, id_target) in enumerate(id_iterator):
 
             id_data, id_target = id_data.to(self.device), id_target.to(self.device)
-
             # sample clean ref_data
             if self.train_clean:
                 try:
@@ -156,37 +196,16 @@ class InDistributionTraining(TrainType):
 
             id_adv_samples = id_train_criterion.inner_max(id_data, id_target)
             with amp.autocast(enabled=self.mixed_precision):
-                if self.train_clean or self.id_trades:
-                    clean_out, adv_out = interleave_forward(self.model, [clean_data, id_adv_samples])
+                loss_closure = self.__get_loss_closure(clean_data, clean_target, id_adv_samples, id_data, id_target,
+                                                       clean_loss, id_train_criterion,
+                                                       total_loss_logger=total_loss_logger,
+                                                       lr_logger=lr_logger,
+                                                       acc_conf_clean=acc_conf_clean,
+                                                       acc_conf_adv=acc_conf_adv,
+                                                       distance_adv=distance_adv
+                                                       )
 
-                    if self.id_trades:
-                        id_hard_label = clean_target
-                        id_target = F.softmax(clean_out, dim=1)
-                    else:
-                        id_hard_label = id_target
-
-                    loss0 = clean_loss(clean_data, clean_out, clean_data, clean_target)
-                    loss1 = id_train_criterion(id_adv_samples, adv_out, id_data, id_target)
-                    loss = self.clean_weight * loss0 + self.id_adv_weight * loss1
-                else:
-                    id_hard_label = id_target
-                    adv_out = self.model(id_adv_samples)
-                    loss = id_train_criterion(id_adv_samples, adv_out, id_data, id_target)
-
-                self.optimizer.zero_grad()
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-
-            total_loss_logger.log(loss)
-            lr_logger.log(self.scheduler.get_last_lr()[0])
-
-            #log
-            if self.train_clean or self.id_trades:
-                acc_conf_clean(clean_data, clean_out, clean_data, clean_target)
-
-            acc_conf_adv(id_adv_samples, adv_out, id_data, id_hard_label)
-            distance_adv(id_adv_samples, adv_out, id_data, id_hard_label)
+                self._loss_step(loss_closure)
 
             #ema
             if self.ema:
@@ -234,8 +253,8 @@ class InDistributionTraining(TrainType):
 
                 id_adv_samples = id_train_criterion.inner_max(id_data, id_target)
                 with amp.autocast(enabled=self.mixed_precision):
-                    if self.train_clean or self.id_trades:
-                        clean_out, adv_out = interleave_forward(self.model, [clean_data, id_adv_samples])
-                    else:
-                        adv_out = self.model(id_adv_samples)
+                    loss_closure = self.__get_loss_closure(clean_data, clean_target, id_adv_samples, id_data, id_target,
+                                                           clean_loss, id_train_criterion)
+
+                    loss_closure(log=False)
 

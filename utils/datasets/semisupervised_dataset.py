@@ -2,8 +2,8 @@
 Datasets with unlabeled (or pseudo-labeled) ref_data
 """
 
-from torch.utils.data import Sampler, Dataset
-from .cifar_augmentation import get_cifar10_augmentation
+from torch.utils.data import Sampler
+from utils.datasets.augmentations.cifar_augmentation import get_cifar10_augmentation
 from .paths import get_base_data_dir, get_CIFAR10_path, get_svhn_path
 from torchvision.datasets import CIFAR10, SVHN
 from torch.utils.data import Sampler, Dataset
@@ -15,17 +15,12 @@ import pickle
 
 import logging
 
-import os
-import pickle
-
-import logging
-
 DATASETS = ['cifar10', 'svhn']
 
 DEFAULT_TRAIN_BATCHSIZE = 128
 DEFAULT_TEST_BATCHSIZE = 128
 
-def get_CIFAR10_ti_500k(train=True, batch_size=None, augm_type='default', fraction=0.5, config_dict=None):
+def get_CIFAR10_ti_500k(train=True, batch_size=None, augm_type='default', fraction=0.5, size=32, config_dict=None):
     if batch_size == None:
         if train:
             batch_size = DEFAULT_TRAIN_BATCHSIZE
@@ -33,7 +28,7 @@ def get_CIFAR10_ti_500k(train=True, batch_size=None, augm_type='default', fracti
             batch_size = DEFAULT_TEST_BATCHSIZE
 
     augm_config = {}
-    transform = get_cifar10_augmentation(type=augm_type, out_size=32, config_dict=augm_config)
+    transform = get_cifar10_augmentation(type=augm_type, out_size=size, config_dict=augm_config)
 
     root = get_base_data_dir()
     trainset = SemiSupervisedDataset(base_dataset='cifar10',

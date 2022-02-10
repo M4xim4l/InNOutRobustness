@@ -1,4 +1,4 @@
-from .models_224x224.pytorch_image_models.factory import create_model
+from timm.models.factory import create_model
 
 def build_model(model_name, num_classes, **kwargs):
     model_name = model_name.lower()

@@ -1,13 +1,9 @@
 import torch
 import torch.distributions
-from torchvision import datasets, transforms
-from torchvision.datasets.vision import VisionDataset
-from .preproc import Gray
+from torchvision import transforms
 import numpy as np
-from .paths import get_tiny_imagenet_path
 from torch.utils.data import Dataset
-import PIL.Image as Image
-from .cifar_augmentation import get_cifar10_augmentation
+from utils.datasets.augmentations.cifar_augmentation import get_cifar10_augmentation
 
 DEFAULT_TRAIN_BATCHSIZE = 128
 DEFAULT_TEST_BATCHSIZE = 128

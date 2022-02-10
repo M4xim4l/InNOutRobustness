@@ -62,7 +62,7 @@ class APGDAttack(AdversarialAttack):
         loss_best_steps = torch.zeros([self.n_iter + 1, x.shape[0]])
 
         minus_criterion_indiv = self._get_loss_f(x, y, targeted, 'none')
-        #my adv attacks all use a loss that takes the current perturbed datapoint and the density_model out at that point
+        #my adv attacks all use a loss that takes the current perturbed datapoint and the model out at that point
         #apgd maximizes, so give a minus
         def criterion_indiv(adv_data, adv_data_out):
             return -minus_criterion_indiv(adv_data, adv_data_out)

@@ -3,7 +3,7 @@ print()
 import os
 
 def get_base_data_dir():
-    path = '/home/scratch/datasets/'
+    path = '/scratch/datasets/'
     return path
 
 def get_svhn_path():

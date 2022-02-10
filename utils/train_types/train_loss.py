@@ -149,7 +149,15 @@ class AccuracyConfidenceLogger(CallableLogger):
 
     def log(self, data, model_out, orig_data, y):
         conf, predicted = F.softmax(model_out, dim=1).max(dim=1)
-        correct = predicted.eq(y)
+        if y.dim() == 1:
+            y_tar = y
+        elif y.dim() == 2:
+            #soft labels
+            _, y_tar = y.max(dim=1)
+        else:
+            raise ValueError()
+
+        correct = predicted.eq(y_tar)
         self.accuracy.add_value(correct.sum().item(), correct.shape[0])
         self.avg_max_confidence.add_value(conf.sum().item(), correct.shape[0])
 
@@ -421,10 +429,9 @@ class LoggingLoss(TrainLoss):
         self.log_stats = log
 
     def _reset_stats(self):
-        if self.log_stats:
-            self.loss_means = []
-            for i in range(self.num_Losses):
-                self.loss_means.append(RunningAverage())
+        self.loss_means = []
+        for i in range(self.num_Losses):
+            self.loss_means.append(RunningAverage())
 
     def _log_stats(self, loss_expanded, loss_idx=0):
         if self.log_stats:
@@ -435,7 +442,6 @@ class LoggingLoss(TrainLoss):
 
         if self.loss_means[0].N > 0:
             for i in range(self.num_Losses):
-
                 # scalar epoch wide mean loss
                 if self.name_prefix is None:
                     full_name = self.name
@@ -444,6 +450,8 @@ class LoggingLoss(TrainLoss):
 
                 if self.sub_losses_postfix is not None:
                     full_name = f'{full_name}_{self.sub_losses_postfix[i]}'
+                elif self.num_Losses > 1:
+                    full_name = f'{full_name}_{i}'
 
                 logs.append(Log(full_name, self.loss_means[i].mean, LogType.SCALAR))
 
@@ -456,6 +464,17 @@ class MinMaxLoss(LoggingLoss):
 
     def inner_max(self, data, target):
         raise NotImplementedError()
+
+class ZeroLoss(MinMaxLoss):
+    def __init__(self, log_stats=False, name_prefix=None):
+        super().__init__('EmptyLoss', expected_format='logits', log_stats=log_stats, name_prefix=name_prefix)
+
+    def forward(self, data, model_out, orig_data, y, reduction='mean'):
+        loss_expanded = torch.zeros(data.shape[0], dtype=torch.float, device=data.device)
+        return TrainLoss.reduce(loss_expanded, reduction)
+
+    def inner_max(self, data, target):
+        return data
 
 class CrossEntropyProxy(LoggingLoss):
     def __init__(self, log_stats=False, name_prefix=None):

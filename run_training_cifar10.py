@@ -39,12 +39,11 @@ else:
     device = torch.device('cuda:' + str(min(device_ids)))
 
 #Load model
-img_size = 32
 model_root_dir = 'Cifar10Models'
 logs_root_dir = 'Cifar10Logs'
 num_classes = 10
 
-model, model_name, model_config = factory.build_model(hps.net, num_classes, model_params=hps.model_params)
+model, model_name, model_config, img_size = factory.build_model(hps.net, num_classes, model_params=hps.model_params)
 model_dir = os.path.join(model_root_dir, model_name)
 log_dir = os.path.join(logs_root_dir, model_name)
 
@@ -56,17 +55,20 @@ msda_config = rh.create_msda_config(hps)
 #load dataset
 od_bs = int(hps.od_bs_factor * hps.bs)
 
+id_config = {}
+if hps.dataset == 'cifar10':
+    train_loader = dl.get_CIFAR10(train=True, batch_size=hps.bs, augm_type=hps.augm, size=img_size,
+                                  config_dict=id_config)
+elif hps.dataset == 'semi-cifar10':
+    train_loader = dl.get_CIFAR10_ti_500k(train=True, batch_size=hps.bs, augm_type=hps.augm, fraction=0.7,
+                                          size=img_size,
+                                          config_dict=id_config)
+else:
+    raise ValueError(f'Dataset {hps.datset} not supported')
+
 if hps.train_type.lower() in ['ceda', 'acet', 'advacet', 'tradesacet', 'tradesceda']:
-    id_config = {}
     od_config = {}
     loader_config = {'ID config': id_config, 'OD config': od_config}
-
-    if hps.dataset == 'cifar10':
-        train_loader = dl.get_CIFAR10(train=True, batch_size=hps.bs, augm_type=hps.augm, size=img_size, config_dict=id_config)
-    elif hps.dataset == 'semi-cifar10':
-        train_loader = dl.get_CIFAR10_ti_500k(train=True, batch_size=hps.bs, augm_type=hps.augm, fraction=0.7, config_dict=id_config)
-    else:
-        raise ValueError(f'Dataset {hps.datset} not supported')
 
     if hps.od_dataset == 'tinyImages':
         tiny_train = dl.get_80MTinyImages(batch_size=od_bs, augm_type=hps.augm, num_workers=1, size=img_size,
@@ -77,22 +79,15 @@ if hps.train_type.lower() in ['ceda', 'acet', 'advacet', 'tradesacet', 'tradesce
     elif hps.od_dataset == 'openImages':
         tiny_train = dl.get_openImages('train', batch_size=od_bs, shuffle=True, augm_type=hps.augm, size=img_size, exclude_dataset=None, config_dict=od_config)
 else:
-    id_config = {}
     loader_config = {'ID config': id_config}
-
-    if hps.dataset == 'cifar10':
-        train_loader = dl.get_CIFAR10(train=True, batch_size=hps.bs, augm_type=hps.augm, size=img_size, config_dict=id_config)
-    elif hps.dataset == 'semi-cifar10':
-        train_loader = dl.get_CIFAR10_ti_500k(train=True, batch_size=hps.bs, augm_type=hps.augm, fraction=0.7, config_dict=id_config)
-    else:
-        raise ValueError(f'Dataset {hps.datset} not supported')
 
 test_loader = dl.get_CIFAR10(train=False, batch_size=hps.bs, augm_type='none', size=img_size)
 
 scheduler_config, optimizer_config = rh.create_optim_scheduler_swa_configs(hps)
+id_attack_config, od_attack_config = rh.create_attack_config(hps, 'cifar10')
 trainer = rh.create_trainer(hps, model, optimizer_config, scheduler_config, device, num_classes,
-                            model_dir, log_dir, msda_config=msda_config, model_config=model_config)
-
+                            model_dir, log_dir, msda_config=msda_config, model_config=model_config,
+                            id_attack_config=id_attack_config, od_attack_config=od_attack_config)
 ##DEBUG:
 # torch.autograd.set_detect_anomaly(True)
 torch.backends.cudnn.benchmark = True
